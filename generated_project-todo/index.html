@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Todo App</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+</head>
+<body>
+    <header class="app-header">
+        <h1>Todo App</h1>
+    </header>
+
+    <section class="task-input-section">
+        <form id="task-form" class="task-form" data-action="add-task-form">
+            <input type="text" id="new-task-input" class="new-task-input" placeholder="Add a new task" data-action="new-task-input" autocomplete="off" />
+            <button type="submit" id="add-task-btn" class="add-task-btn" data-action="add-task-btn">Add</button>
+        </form>
+    </section>
+
+    <ul id="task-list" class="task-list" data-action="task-list"></ul>
+
+    <section class="filter-section">
+        <button id="filter-all" class="filter-btn" data-filter="all" data-action="filter-btn">All</button>
+        <button id="filter-active" class="filter-btn" data-filter="active" data-action="filter-btn">Active</button>
+        <button id="filter-completed" class="filter-btn" data-filter="completed" data-action="filter-btn">Completed</button>
+    </section>
+</body>
+</html>
