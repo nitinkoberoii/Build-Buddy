@@ -14,14 +14,22 @@ _ = load_dotenv()
 set_debug(True)
 set_verbose(True)
 
-llm = ChatGroq(model="openai/gpt-oss-120b")
+llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
 
 def planner_agent(state: dict) -> dict:
     """Converts user prompt into a structured Plan."""
     user_prompt = state["user_prompt"]
-    resp = llm.with_structured_output(Plan).invoke(
-        planner_prompt(user_prompt)
+    
+    # Use JSON mode instead of structured output
+    llm_json = llm.bind(response_format={"type": "json_object"})
+    response = llm_json.invoke(
+        planner_prompt(user_prompt) + "\n\nRespond with valid JSON matching this schema: {name: string, description: string, techstack: string, features: array of strings, files: array of {path: string, purpose: string}}"
     )
+    
+    import json
+    resp_dict = json.loads(response.content)
+    resp = Plan(**resp_dict)
+    
     if resp is None:
         raise ValueError("Planner did not return a valid response.")
     return {"plan": resp}
@@ -29,11 +37,19 @@ def planner_agent(state: dict) -> dict:
 def architect_agent(state: dict) -> dict:
     """Creates TaskPlan from Plan."""
     plan: Plan = state["plan"]
-    resp = llm.with_structured_output(TaskPlan).invoke(
-        architect_prompt(plan=plan.model_dump_json())
+    
+    # Use JSON mode instead of structured output
+    llm_json = llm.bind(response_format={"type": "json_object"})
+    response = llm_json.invoke(
+        architect_prompt(plan=plan.model_dump_json()) + "\n\nRespond with valid JSON matching this schema: {implementation_steps: array of {filepath: string, task_description: string}}"
     )
+    
+    import json
+    resp_dict = json.loads(response.content)
+    resp = TaskPlan(**resp_dict)
+    
     if resp is None:
-        raise ValueError("Planner did not return a valid response.")
+        raise ValueError("Architect did not return a valid response.")
 
     resp.plan = plan
     print(resp.model_dump_json())
@@ -50,21 +66,37 @@ def coder_agent(state: dict) -> dict:
         return {"coder_state": coder_state, "status": "DONE"}
 
     current_task = steps[coder_state.current_step_idx]
-    existing_content = read_file.run(current_task.filepath)
+    
+    # Check if file exists first
+    try:
+        existing_content = read_file.run(current_task.filepath)
+    except Exception as e:
+        existing_content = f"[File does not exist yet: {e}]"
 
     system_prompt = coder_system_prompt()
     user_prompt = (
         f"Task: {current_task.task_description}\n"
         f"File: {current_task.filepath}\n"
-        f"Existing content:\n{existing_content}\n"
-        "Use write_file(path, content) to save your changes."
+        f"Existing content:\n{existing_content}\n\n"
+        "IMPORTANT: Use ONLY the provided tools. The available tools are:\n"
+        "- read_file(path)\n"
+        "- write_file(path, content)\n"
+        "- list_files(directory)\n"
+        "- get_current_directory()\n"
+        "- run_cmd(cmd, cwd, timeout)\n\n"
+        "Complete this task by writing the necessary code to the specified file."
     )
 
-    coder_tools = [read_file, write_file, list_files, get_current_directory]
+    coder_tools = [read_file, write_file, list_files, get_current_directory, run_cmd]
     react_agent = create_react_agent(llm, coder_tools)
 
-    react_agent.invoke({"messages": [{"role": "system", "content": system_prompt},
-                                     {"role": "user", "content": user_prompt}]})
+    try:
+        react_agent.invoke({"messages": [{"role": "system", "content": system_prompt},
+                                         {"role": "user", "content": user_prompt}]})
+    except Exception as e:
+        print(f"Error in coder agent: {e}")
+        # Continue to next task even if this one fails
+        pass
 
     coder_state.current_step_idx += 1
     return {"coder_state": coder_state}

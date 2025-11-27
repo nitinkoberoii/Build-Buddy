@@ -4,7 +4,7 @@ from typing import Tuple
 
 from langchain_core.tools import tool
 
-PROJECT_ROOT = pathlib.Path.cwd() / "generated_project"
+PROJECT_ROOT = pathlib.Path.cwd() / "generated_project-calculator"
 
 def safe_path_for_project(path: str) -> pathlib.Path:
     p = (PROJECT_ROOT / path).resolve()
@@ -37,8 +37,11 @@ def get_current_directory() -> str:
 
 @tool
 def list_files(directory: str = ".") -> str:
-    """Lists all files in the specified directory within the project root."""
+    """Lists all files and directories recursively in the specified directory within the project root. 
+    Use this to explore the project structure. Directory defaults to '.' (project root)."""
     p = safe_path_for_project(directory)
+    if not p.exists():
+        return f"ERROR: {p} does not exist"
     if not p.is_dir():
         return f"ERROR: {p} is not a directory"
     files = [str(f.relative_to(PROJECT_ROOT)) for f in p.glob("**/*") if f.is_file()]
