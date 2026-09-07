@@ -94,12 +94,26 @@ Create a .env file in the project root:
 GROQ_API_KEY=your_key_here
 ```
 
+- Create the generated-project directory
+```
+mkdir generated_project-todo
+```
+
 - Run BuildBuddy
 ```
-python main.py --prompt "create a calculator app"
+.\.venv\Scripts\python.exe main.py
 ```
+BuildBuddy will prompt you to enter the project request interactively. For example:
+```
+Enter your project prompt: create a calculator app using HTML, CSS, and JavaScript
+```
+
 Generated apps will appear under:
-`/generated_project/`
+`/generated_project-todo/`
+
+> On Windows, use `uv sync` to create the virtual environment, then run the
+> `.venv\\Scripts\\python.exe` command above. The current CLI does not support a
+> `--prompt` argument.
 
 ---
 
