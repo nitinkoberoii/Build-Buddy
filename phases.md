@@ -10,7 +10,7 @@
 - React, TypeScript, and Vite frontend.
 - Responsive product landing experience and design system.
 
-## Phase 2 — API foundation (next)
+## Phase 2 — API foundation (complete)
 
 - FastAPI application and typed schemas.
 - Reusable generation service extracted from CLI.
@@ -18,9 +18,9 @@
 - Health, create, status, event, files, and download endpoints.
 - Unit/API tests and OpenAPI documentation.
 
-**Exit criterion:** an API client can start a run, observe state, and safely access output files.
+**Exit criterion met:** an API client can start a run, observe state, and safely access output files.
 
-## Phase 3 — frontend workflow
+## Phase 3 — frontend workflow (next)
 
 - Submit landing prompt to the API.
 - SSE progress with polling fallback.

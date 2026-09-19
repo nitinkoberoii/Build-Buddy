@@ -1,15 +1,35 @@
+import contextvars
 import pathlib
 import subprocess
-from typing import Tuple
+from typing import Tuple, Optional
 
 from langchain_core.tools import tool
 
-PROJECT_ROOT = pathlib.Path.cwd() / "generated_project-todo"
+_DEFAULT_PROJECT_ROOT = pathlib.Path.cwd() / "generated_project-todo"
+_project_root_var: contextvars.ContextVar[pathlib.Path] = contextvars.ContextVar(
+    "project_root", default=_DEFAULT_PROJECT_ROOT
+)
+
+def set_project_root(path: pathlib.Path) -> contextvars.Token:
+    """Sets the workspace root path for the current context."""
+    resolved_path = path.resolve()
+    resolved_path.mkdir(parents=True, exist_ok=True)
+    return _project_root_var.set(resolved_path)
+
+def get_project_root() -> pathlib.Path:
+    """Gets the active workspace root path for the current context."""
+    root = _project_root_var.get().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 def safe_path_for_project(path: str) -> pathlib.Path:
-    p = (PROJECT_ROOT / path).resolve()
-    if PROJECT_ROOT.resolve() not in p.parents and PROJECT_ROOT.resolve() != p.parent and PROJECT_ROOT.resolve() != p:
-        raise ValueError("Attempt to write outside project root")
+    root = get_project_root()
+    if not path or path == ".":
+        return root
+    clean_path = path.lstrip("/\\")
+    p = (root / clean_path).resolve()
+    if root not in p.parents and root != p.parent and root != p:
+        raise ValueError(f"Attempt to access path outside project root: {path}")
     return p
 
 @tool
@@ -33,27 +53,30 @@ def read_file(path: str) -> str:
 @tool
 def get_current_directory() -> str:
     """Returns the current working directory."""
-    return str(PROJECT_ROOT)
+    return str(get_project_root())
 
 @tool
 def list_files(directory: str = ".") -> str:
     """Lists all files and directories recursively in the specified directory within the project root. 
     Use this to explore the project structure. Directory defaults to '.' (project root)."""
+    root = get_project_root()
     p = safe_path_for_project(directory)
     if not p.exists():
         return f"ERROR: {p} does not exist"
     if not p.is_dir():
         return f"ERROR: {p} is not a directory"
-    files = [str(f.relative_to(PROJECT_ROOT)) for f in p.glob("**/*") if f.is_file()]
+    files = [str(f.relative_to(root)) for f in p.glob("**/*") if f.is_file()]
     return "\n".join(files) if files else "No files found."
 
 @tool
 def run_cmd(cmd: str, cwd: str = None, timeout: int = 30) -> Tuple[int, str, str]:
     """Runs a shell command in the specified directory and returns the result."""
-    cwd_dir = safe_path_for_project(cwd) if cwd else PROJECT_ROOT
+    root = get_project_root()
+    cwd_dir = safe_path_for_project(cwd) if cwd else root
     res = subprocess.run(cmd, shell=True, cwd=str(cwd_dir), capture_output=True, text=True, timeout=timeout)
     return res.returncode, res.stdout, res.stderr
 
-def init_project_root():
-    PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
-    return str(PROJECT_ROOT)
+def init_project_root() -> str:
+    root = get_project_root()
+    root.mkdir(parents=True, exist_ok=True)
+    return str(root)

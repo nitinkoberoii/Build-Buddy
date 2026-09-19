@@ -7,25 +7,28 @@
 - React + TypeScript/Vite frontend in `frontend/`.
 - Responsive landing page, model selector, attachment picker, review section, and footer.
 - Frontend `npm run build` passes.
+- FastAPI backend under `api/` with modular router design (`health`, `generations`).
+- Dynamic `ContextVar` workspace scoping for tools (`safe_path_for_project`, `read_file`, `write_file`, `list_files`, `run_cmd`) per UUID generation run.
+- Background agent execution runner (`runner.py`) with lifecycle events (`queued → planning → architecting → coding → completed`).
+- REST and SSE streaming endpoints (`/api/generations`, `/api/generations/{id}/events`, `/api/generations/{id}/files`, `/api/generations/{id}/download`).
+- Backend unit and integration test suite passing with `pytest` (100% pass rate across 4 test specs).
 - Project architecture, design, PRD, phase, and rule documents exist.
 
 ## Current limitations
 
-- Backend is CLI-only: no HTTP APIs.
-- Frontend controls are local/presentational only.
-- One shared `generated_project-todo/` output directory is unsafe for concurrent web use.
-- No database, authentication, run history, status streaming, or artifact archive.
+- Frontend controls are currently local/presentational only and need API integration.
+- In-memory event stream queues; need persistent database storage for production scale.
 - LangChain debug logging is enabled and unsuitable for production.
 
 ## Immediate next task
 
-Build API foundation before further landing-page work:
+Phase 3 — Connect Frontend Workflow to API:
 
-1. Add FastAPI under `api/` or `server/`.
-2. Extract reusable generation execution from CLI code.
-3. Create one UUID-scoped output directory per run.
-4. Implement health, creation, status, event, file-list/read, and download routes.
-5. Connect the prompt form to creation and build a generation-progress route.
+1. Wire prompt submission form on landing page to `POST /api/generations`.
+2. Implement SSE progress view with stage progress indicators and live event feed.
+3. Build file tree explorer and code preview component fed by `/api/generations/{id}/files`.
+4. Connect project ZIP download button to `/api/generations/{id}/download`.
+5. Add cancellation and error recovery UI states.
 
 ## Agent guidance
 
