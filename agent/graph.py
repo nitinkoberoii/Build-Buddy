@@ -18,6 +18,7 @@ llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
 
 def planner_agent(state: dict) -> dict:
     """Converts user prompt into a structured Plan."""
+    check_cancellation_active()
     user_prompt = state["user_prompt"]
     
     # Use JSON mode instead of structured output
@@ -36,6 +37,7 @@ def planner_agent(state: dict) -> dict:
 
 def architect_agent(state: dict) -> dict:
     """Creates TaskPlan from Plan."""
+    check_cancellation_active()
     plan: Plan = state["plan"]
     
     # Use JSON mode instead of structured output
@@ -57,6 +59,7 @@ def architect_agent(state: dict) -> dict:
 
 def coder_agent(state: dict) -> dict:
     """LangGraph tool-using coder agent."""
+    check_cancellation_active()
     coder_state: CoderState = state.get("coder_state")
     if coder_state is None:
         coder_state = CoderState(task_plan=state["task_plan"], current_step_idx=0)
@@ -94,6 +97,8 @@ def coder_agent(state: dict) -> dict:
         react_agent.invoke({"messages": [{"role": "system", "content": system_prompt},
                                          {"role": "user", "content": user_prompt}]})
     except Exception as e:
+        if "cancelled" in str(e).lower() or isinstance(e, RuntimeError):
+            raise e
         print(f"Error in coder agent: {e}")
         # Continue to next task even if this one fails
         pass

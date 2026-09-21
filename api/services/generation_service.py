@@ -207,6 +207,14 @@ class GenerationService:
 
     def cancel_generation(self, generation_id: str) -> bool:
         self._cancel_flags[generation_id] = True
+
+        # Write .cancelled marker file to signal immediate tool/graph abort
+        try:
+            (self._get_run_dir(generation_id) / ".cancelled").touch(exist_ok=True)
+            (self._get_project_dir(generation_id) / ".cancelled").touch(exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not create .cancelled marker file for {generation_id}: {e}")
+
         run = self._runs.get(generation_id)
         if run and run.state not in (
             GenerationState.COMPLETED,

@@ -5,7 +5,7 @@ import traceback
 from typing import Callable, Awaitable, Any, Dict, Optional
 
 from agent.graph import agent
-from agent.tools import set_project_root
+from agent.tools import set_project_root, check_cancellation_active
 from api.models.generation import GenerationState
 
 logger = logging.getLogger(__name__)
@@ -31,11 +31,14 @@ async def run_agent_generation(
 
         def _init_stream():
             set_project_root(project_dir)
+            check_cancellation_active()
             return agent.stream(inputs, config=config)
 
         stream_gen = await loop.run_in_executor(None, _init_stream)
 
-        def _get_next_node(gen):
+        def _get_next_node(gen, p_dir: pathlib.Path):
+            set_project_root(p_dir)
+            check_cancellation_active()
             try:
                 return next(gen), False
             except StopIteration:
@@ -48,7 +51,16 @@ async def run_agent_generation(
                 await on_state_change(GenerationState.CANCELLED, None, None)
                 return
 
-            output, is_done = await loop.run_in_executor(None, _get_next_node, stream_gen)
+            try:
+                output, is_done = await loop.run_in_executor(None, _get_next_node, stream_gen, project_dir)
+            except Exception as exc:
+                if "cancelled" in str(exc).lower() or isinstance(exc, RuntimeError):
+                    logger.warning(f"Generation run {generation_id} stopped due to cancellation exception: {exc}")
+                    await on_event("cancelled", "Generation run was cancelled by user", None)
+                    await on_state_change(GenerationState.CANCELLED, None, None)
+                    return
+                raise exc
+
             if is_done:
                 break
 

@@ -5,6 +5,7 @@ interface LoadingScreenProps {
   generation: GenerationResponse;
   events: GenerationEvent[];
   onCancel: () => void;
+  onReturnHome?: () => void;
 }
 
 function getStageLabel(state: GenerationState): { stage: string; title: string; desc: string } {
@@ -39,6 +40,12 @@ function getStageLabel(state: GenerationState): { stage: string; title: string; 
         title: "Starter project ready",
         desc: "Finalizing generated files and preparing project workspace...",
       };
+    case "cancelled":
+      return {
+        stage: "CANCELLED",
+        title: "Generation run was cancelled",
+        desc: "Background execution has been terminated.",
+      };
     default:
       return {
         stage: "PROCESSING",
@@ -52,10 +59,33 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
   generation,
   events,
   onCancel,
+  onReturnHome,
 }) => {
   const [showLogs, setShowLogs] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const { stage, title, desc } = getStageLabel(generation.state);
+
+  const isCancelled = generation.state === "cancelled";
+
+  // 5-second auto-return countdown timer on cancellation
+  useEffect(() => {
+    if (isCancelled) {
+      setCountdown(5);
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev === null || prev <= 1) {
+            clearInterval(timer);
+            if (onReturnHome) onReturnHome();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }
+  }, [isCancelled, onReturnHome]);
 
   // Auto-scroll logs when open
   useEffect(() => {
@@ -85,17 +115,29 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
 
         {/* Stage Status Info */}
         <div className="loading-status-group">
-          <div className="stage-pill mono-text">
+          <div className={`stage-pill mono-text ${isCancelled ? "is-cancelled-pill" : ""}`}>
             <span className="pulse-dot" />
-            <span>{stage} AGENT</span>
+            <span>{stage} {isCancelled ? "" : "AGENT"}</span>
           </div>
 
           <h2 className="loading-title">{title}</h2>
           <p className="loading-desc">{desc}</p>
 
-          {latestEvent && (
-            <div className="latest-log-banner mono-text">
-              <span className="log-arrow">▶</span> {latestEvent.message}
+          {isCancelled ? (
+            <div className="latest-log-banner is-cancelled-banner mono-text">
+              <span className="log-arrow-warning">⚠</span> Generation run was cancelled by user
+            </div>
+          ) : (
+            latestEvent && (
+              <div className="latest-log-banner mono-text">
+                <span className="log-arrow">▶</span> {latestEvent.message}
+              </div>
+            )
+          )}
+
+          {isCancelled && countdown !== null && (
+            <div className="return-timer mono-text">
+              <span>↪</span> Returning to home screen in {countdown} seconds...
             </div>
           )}
 
@@ -111,9 +153,11 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
           >
             {showLogs ? "Hide Terminal Logs ▲" : "Show Terminal Logs ▼"}
           </button>
-          <button className="cancel-run-btn" type="button" onClick={onCancel}>
-            Cancel Generation
-          </button>
+          {!isCancelled && (
+            <button className="cancel-run-btn" type="button" onClick={onCancel}>
+              Cancel Generation
+            </button>
+          )}
         </div>
 
         {/* Optional Collapsible Terminal Log Drawer */}

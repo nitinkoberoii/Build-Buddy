@@ -177,6 +177,7 @@ export default function App() {
               generation={activeGeneration}
               events={events}
               onCancel={handleCancel}
+              onReturnHome={handleNewProject}
             />
           )}
         </>

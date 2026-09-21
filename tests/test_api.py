@@ -91,3 +91,38 @@ def test_generation_lifecycle_endpoints(tmp_path):
     assert res.status_code == 200
     assert res.headers["content-type"] == "application/zip"
     assert len(res.content) > 0
+
+def test_cancellation_active_raises_runtime_error(tmp_path):
+    from agent.tools import set_project_root, check_cancellation_active, write_file
+    workspace = tmp_path / "cancel_test"
+    set_project_root(workspace)
+
+    # Before cancel marker
+    write_file.invoke({"path": "test.txt", "content": "hello"})
+
+    # Create cancel marker
+    (workspace / ".cancelled").touch()
+
+    # Now tool operations must raise RuntimeError immediately
+    with pytest.raises(RuntimeError, match="Generation run cancelled by user"):
+        check_cancellation_active()
+
+    with pytest.raises(RuntimeError, match="Generation run cancelled by user"):
+        write_file.invoke({"path": "test2.txt", "content": "hello"})
+
+def test_cancel_generation_endpoint(tmp_path):
+    generation_service.storage_dir = tmp_path
+    res = client.post("/api/generations", json={"prompt": "Build an app to be cancelled"})
+    assert res.status_code == 201
+    gen_id = res.json()["id"]
+
+    # Cancel generation
+    cancel_res = client.post(f"/api/generations/{gen_id}/cancel")
+    assert cancel_res.status_code == 200
+    assert "cancelled" in cancel_res.json()
+
+    # Check status
+    status_res = client.get(f"/api/generations/{gen_id}")
+    assert status_res.status_code == 200
+    assert status_res.json()["state"] == "cancelled"
+
