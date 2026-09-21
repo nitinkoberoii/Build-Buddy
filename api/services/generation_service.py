@@ -28,6 +28,7 @@ class GenerationService:
         self._events: Dict[str, List[GenerationEvent]] = {}
         self._event_queues: Dict[str, List[asyncio.Queue]] = {}
         self._active_tasks: Dict[str, asyncio.Task] = {}
+        self._cancel_flags: Dict[str, bool] = {}
         self._load_existing_runs()
 
     def _load_existing_runs(self) -> None:
@@ -131,6 +132,7 @@ class GenerationService:
                 project_dir=project_dir,
                 on_event=on_event,
                 on_state_change=on_state_change,
+                is_cancelled_check=lambda: self._cancel_flags.get(gen_id, False),
             )
         finally:
             self._active_tasks.pop(gen_id, None)
@@ -200,7 +202,22 @@ class GenerationService:
             if generation_id in self._event_queues:
                 self._event_queues[generation_id].remove(queue)
 
+    def is_cancelled(self, generation_id: str) -> bool:
+        return self._cancel_flags.get(generation_id, False)
+
     def cancel_generation(self, generation_id: str) -> bool:
+        self._cancel_flags[generation_id] = True
+        run = self._runs.get(generation_id)
+        if run and run.state not in (
+            GenerationState.COMPLETED,
+            GenerationState.FAILED,
+            GenerationState.CANCELLED,
+        ):
+            run.state = GenerationState.CANCELLED
+            run.updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            self._save_run_meta(run)
+            self.record_event(generation_id, "cancelled", "Generation run was cancelled by user")
+
         task = self._active_tasks.get(generation_id)
         if task and not task.done():
             task.cancel()

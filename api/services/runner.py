@@ -16,9 +16,10 @@ async def run_agent_generation(
     project_dir: pathlib.Path,
     on_event: Callable[[str, str, Optional[Dict[str, Any]]], Awaitable[None]],
     on_state_change: Callable[[GenerationState, Optional[Dict[str, Any]], Optional[str]], Awaitable[None]],
+    is_cancelled_check: Optional[Callable[[], bool]] = None,
     recursion_limit: int = 100,
 ) -> None:
-    """Executes the LangGraph agent for a single generation run in an isolated project directory."""
+    """Executes the LangGraph agent for a single generation run with step-by-step cancellation checking."""
     token = set_project_root(project_dir)
     try:
         await on_state_change(GenerationState.PLANNING, None, None)
@@ -26,24 +27,37 @@ async def run_agent_generation(
 
         inputs = {"user_prompt": prompt}
         config = {"recursion_limit": recursion_limit}
-
-        # Run agent stream in an executor so blocking sync LLM calls don't freeze async event loop
         loop = asyncio.get_running_loop()
 
-        def _execute_stream():
-            # Ensure project root contextvar is maintained inside thread
+        def _init_stream():
             set_project_root(project_dir)
-            events = []
-            for output in agent.stream(inputs, config=config):
-                events.append(output)
-            return events
+            return agent.stream(inputs, config=config)
 
-        outputs = await loop.run_in_executor(None, _execute_stream)
+        stream_gen = await loop.run_in_executor(None, _init_stream)
 
-        plan_dict = None
-        task_plan_dict = None
+        def _get_next_node(gen):
+            try:
+                return next(gen), False
+            except StopIteration:
+                return None, True
 
-        for output in outputs:
+        while True:
+            if is_cancelled_check and is_cancelled_check():
+                logger.warning(f"Generation run {generation_id} stopped due to cancellation flag.")
+                await on_event("cancelled", "Generation run was cancelled by user", None)
+                await on_state_change(GenerationState.CANCELLED, None, None)
+                return
+
+            output, is_done = await loop.run_in_executor(None, _get_next_node, stream_gen)
+            if is_done:
+                break
+
+            if is_cancelled_check and is_cancelled_check():
+                logger.warning(f"Generation run {generation_id} stopped due to cancellation flag.")
+                await on_event("cancelled", "Generation run was cancelled by user", None)
+                await on_state_change(GenerationState.CANCELLED, None, None)
+                return
+
             if "planner" in output:
                 plan_obj = output["planner"].get("plan")
                 if plan_obj:
@@ -78,3 +92,4 @@ async def run_agent_generation(
         logger.error(f"Error in agent generation run {generation_id}: {error_msg}\n{traceback.format_exc()}")
         await on_event("failed", f"Generation failed: {error_msg}", {"error": error_msg})
         await on_state_change(GenerationState.FAILED, None, error_msg)
+
