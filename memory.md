@@ -6,29 +6,31 @@
 - Groq configuration and restricted generated-file tools.
 - React + TypeScript/Vite frontend in `frontend/`.
 - Responsive landing page, model selector, attachment picker, review section, and footer.
-- Frontend `npm run build` passes.
 - FastAPI backend under `api/` with modular router design (`health`, `generations`).
 - Dynamic `ContextVar` workspace scoping for tools (`safe_path_for_project`, `read_file`, `write_file`, `list_files`, `run_cmd`) per UUID generation run.
 - Background agent execution runner (`runner.py`) with lifecycle events (`queued → planning → architecting → coding → completed`).
 - REST and SSE streaming endpoints (`/api/generations`, `/api/generations/{id}/events`, `/api/generations/{id}/files`, `/api/generations/{id}/download`).
 - Backend unit and integration test suite passing with `pytest` (100% pass rate across 4 test specs).
+- Phase 3 (Part 1 — Code & API Integration Layer):
+  - Vite dev proxy configured in `vite.config.ts` mapping `/api` to `http://127.0.0.1:8000`.
+  - TypeScript model interfaces created in `types.ts`.
+  - API client module created in `api.ts` with typed methods (`createGeneration`, `getGeneration`, `getFileTree`, `getFileContent`, `cancelGeneration`, `getDownloadUrl`, `subscribeToEvents`).
+  - Frontend build (`npm run build`) verified and passing 100%.
 - Project architecture, design, PRD, phase, and rule documents exist.
 
 ## Current limitations
 
-- Frontend controls are currently local/presentational only and need API integration.
-- In-memory event stream queues; need persistent database storage for production scale.
+- Frontend visual components awaiting Part 2 UI reference design.
+- In-memory event stream queues; need persistent database storage for multi-instance production scale.
 - LangChain debug logging is enabled and unsuitable for production.
 
 ## Immediate next task
 
-Phase 3 — Connect Frontend Workflow to API:
+Phase 3 (Part 2 — UI Layout & Visual Integration):
 
-1. Wire prompt submission form on landing page to `POST /api/generations`.
-2. Implement SSE progress view with stage progress indicators and live event feed.
-3. Build file tree explorer and code preview component fed by `/api/generations/{id}/files`.
-4. Connect project ZIP download button to `/api/generations/{id}/download`.
-5. Add cancellation and error recovery UI states.
+1. Receive UI design reference and layout mockups from user.
+2. Build real-time generation progress view, terminal event log, file tree explorer, and code viewer components.
+3. Wire UI components to `api.ts` data client and test end-to-end user flow.
 
 ## Agent guidance
 

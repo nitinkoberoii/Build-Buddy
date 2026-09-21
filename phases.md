@@ -20,11 +20,10 @@
 
 **Exit criterion met:** an API client can start a run, observe state, and safely access output files.
 
-## Phase 3 — frontend workflow (next)
+## Phase 3 — frontend workflow (Part 1 complete, Part 2 in progress)
 
-- Submit landing prompt to the API.
-- SSE progress with polling fallback.
-- Results, file preview, download, error/retry, and cancellation views.
+- **Part 1 (Complete)**: API client (`api.ts`), TypeScript schemas (`types.ts`), Vite dev proxy (`vite.config.ts`), and SSE event subscription handlers.
+- **Part 2 (Next)**: UI visual layout, progress dashboard, file explorer, code viewer, and project workspace UI components (awaiting user UI design reference).
 
 **Exit criterion:** a browser user can receive a project without a terminal.
 
