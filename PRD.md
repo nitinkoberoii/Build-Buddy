@@ -29,12 +29,13 @@ BuildBuddy is a web platform that turns an idea into an understandable, editable
 | ID | Requirement |
 | --- | --- |
 | FR-1 | Valid prompts create a generation ID. |
-| FR-2 | Users can observe run state without manually refreshing. |
-| FR-3 | Each run writes only in its isolated directory. |
-| FR-4 | Users can access only their generation files. |
+| FR-2 | Users can observe run state without manually refreshing via SSE or status polling. |
+| FR-3 | Each run writes only in its isolated UUID directory. |
+| FR-4 | Users can access only their generation files safely. |
 | FR-5 | Completed projects can be downloaded as ZIP archives. |
 | FR-6 | Validation, provider, timeout, and cancellation errors are understandable. |
 | FR-7 | The workflow works on current desktop and mobile browsers. |
+| FR-8 | Users can request cancellation of an active generation run at any time via the UI or API. |
 
 ## Non-functional requirements
 
@@ -44,6 +45,15 @@ BuildBuddy is a web platform that turns an idea into an understandable, editable
 - Use structured generation-ID logs without sensitive data.
 - Maintain keyboard access, focus visibility, contrast, and reduced-motion support.
 
+## Delivery status
+
+- Phase 0 (Agent core): Complete.
+- Phase 1 (Web landing): Complete.
+- Phase 2 (FastAPI backend): Complete.
+- Phase 3 (Frontend visual workspace integration & job cancellation): Complete.
+- Phase 4 (Reliability & persistence): Next.
+
 ## Out of scope for MVP
 
 Collaborative editing, app hosting, arbitrary shell execution, marketplace templates, billing, and unrestricted repository access.
+

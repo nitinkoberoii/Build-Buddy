@@ -15,19 +15,19 @@
 - FastAPI application and typed schemas.
 - Reusable generation service extracted from CLI.
 - UUID-scoped run storage and lifecycle events.
-- Health, create, status, event, files, and download endpoints.
+- Health, create, status, event, files, download, and cancel endpoints.
 - Unit/API tests and OpenAPI documentation.
 
-**Exit criterion met:** an API client can start a run, observe state, and safely access output files.
+**Exit criterion met:** an API client can start a run, observe state, cancel if needed, and safely access output files.
 
-## Phase 3 — frontend workflow (Part 1 complete, Part 2 in progress)
+## Phase 3 — frontend workflow (complete)
 
 - **Part 1 (Complete)**: API client (`api.ts`), TypeScript schemas (`types.ts`), Vite dev proxy (`vite.config.ts`), and SSE event subscription handlers.
-- **Part 2 (Next)**: UI visual layout, progress dashboard, file explorer, code viewer, and project workspace UI components (awaiting user UI design reference).
+- **Part 2 (Complete)**: UI visual layout, progress dashboard with live terminal log and cancellation (`LoadingScreen.tsx`), file tree explorer (`FileTree.tsx`), code viewer (`CodeViewer.tsx`), and project workspace UI (`ProjectWorkspace.tsx`).
 
-**Exit criterion:** a browser user can receive a project without a terminal.
+**Exit criterion met:** a browser user can submit a prompt, monitor progress, cancel active runs, inspect generated code, and download a project without a terminal.
 
-## Phase 4 — reliability
+## Phase 4 — reliability (next / in progress)
 
 - Background jobs, timeout/cancel policy, logs, metrics, rate limits, CORS, and input/file validation.
 - SQLite local persistence, PostgreSQL deployment migration, object-storage artifacts.
@@ -36,3 +36,4 @@
 ## Phase 5 — launch and iteration
 
 - Authentication, user history, retention, deployment, monitoring, user feedback, and model quality evaluation.
+

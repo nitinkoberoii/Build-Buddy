@@ -29,11 +29,12 @@ BuildBuddy is a dark, editorial product interface: ultraviolet rings, magenta ri
 
 ## Required screens
 
-1. Landing and prompt submission.
-2. Generation progress: prompt, stage indicator, event feed, cancel action, and recovery.
-3. Result: plan summary, file tree, source preview, and ZIP download.
-4. Generation history: state, title, time, reopen action.
-5. Empty and error states with clear next actions.
+1. Landing and prompt submission (`App.tsx` — complete).
+2. Generation progress: stage indicators (`planning → architecting → coding`), live SSE terminal log, cancel action, and error recovery (`LoadingScreen.tsx` — complete).
+3. Result: workspace summary, file tree explorer (`FileTree.tsx`), live syntax-highlighted code preview (`CodeViewer.tsx`), and ZIP download (`ProjectWorkspace.tsx` — complete).
+4. Generation history: state, title, time, reopen action (scheduled for Phase 5).
+5. Empty and error states with clear retry actions (`App.tsx` & `LoadingScreen.tsx` — complete).
+
 
 ## Interaction requirements
 

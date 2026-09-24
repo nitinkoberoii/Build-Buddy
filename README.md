@@ -3,34 +3,40 @@ An **Agentic AI** Software Engineer that Turns Natural Language into Real Applic
 
 BuildBuddy is an end-to-end agentic AI system that takes a prompt like “create a calculator app” or “build a todo application” and automatically generates a complete, runnable project — including HTML/CSS/JS files, README, tests, and all supporting structure.
 
-Powered by **LangChain**, **LangGraph**, **Pydantic**, and **Groq LLMs**, BuilderBuddy mimics how real software is built:
-`planning → architecture → coding → file generation`.
+Powered by **LangChain**, **LangGraph**, **FastAPI**, **React + Vite**, **Pydantic**, and **Groq LLMs**, BuildBuddy mimics how real software is built:
+`planning → architecture → coding → workspace inspection`.
 
 ---
 
 ## ✨ Features
-### 🧠 `Planner → Architect → Coder agent pipeline`
+
+### 🧠 Planner → Architect → Coder agent pipeline
 Converts user prompts into structured engineering plans, detailed file-level tasks, and actual executable code.
 
-### 🗂️ Full project generation
-Produces a complete `generated_project/` directory containing HTML, CSS, JS, README, tests, and any required assets.
+### 🌐 Modern Web Interface & Interactive Workspace
+Full-featured React + TypeScript frontend featuring a responsive landing page, model picker, real-time stage progress dashboard (`LoadingScreen`), terminal event logs via Server-Sent Events (SSE), interactive file tree explorer (`FileTree`), live syntax-highlighted code viewer (`CodeViewer`), and one-click ZIP exporter (`ProjectWorkspace`).
 
-### 🛠️ Safe tool-augmented coding
-AI writes and edits files via secure I/O tools (read_file, write_file, list_files) with path restrictions.
+### ⚡ Job Cancellation
+Cancel active AI generations mid-run with immediate tool execution interruption and state cleanups.
 
-### 🔍 Agent Debugger support
-Visualizes node-level state transitions (planner → architect → coder) and LLM trace execution.
+### 🗂️ UUID-Scoped Isolation
+Every generation run operates within an isolated UUID workspace (`storage/{generation_id}/project`), preventing concurrent file collisions and directory path traversal.
 
-### ⚙️ Model-agnostic
-Supports Groq's GPT-OSS models, OpenAI, Gemini, and local models via simple config changes.
+### 🛠️ Safe Tool-Augmented Coding
+AI writes and edits files via secure I/O tools (`read_file`, `write_file`, `list_files`, `run_cmd`) with path validation and cancellation checks.
+
+### 🔍 Agent Debugger & Tracing
+Visualizes node-level state transitions (`planner → architect → coder`) and LLM trace execution.
 
 ---
 
 ## 🏗️ Architecture Overview
-BuildBuddy uses a LangGraph state machine with three core nodes:
+
+BuildBuddy uses a FastAPI backend with a LangGraph state machine across three core agent nodes:
+
 ```
-User Prompt
-      ↓
+User Prompt (Web UI or CLI)
+       ↓
  +------------------+
  |      Planner     |
  |------------------|
@@ -38,16 +44,16 @@ User Prompt
  | plan: features,  |
  | files, tech stack|
  +------------------+
-      ↓
+       ↓
  +------------------+
  |    Architect     |
  |------------------|
  | Expands each file|
  | into detailed    |
  | implementation   |
- | tasks (Jira-like)|
+ | tasks            |
  +------------------+
-      ↓
+       ↓
  +------------------+
  |      Coder       |
  |------------------|
@@ -56,114 +62,132 @@ User Prompt
  | files using      |
  | LLM + tools      |
  +------------------+
-      ↓
-Generated Project Folder
+       ↓
+  Project Workspace
+  (/storage/{id}/project/)
 ```
 
 State Flow:
-- State In: {"user_prompt": "..."}
-- Planner adds: plan
-- Architect adds: task_plan
-- Coder adds: coder_state + generated files
-- Status: "done" → graph terminates
-
-This mirrors a real software workflow:
-`project planning → architectural breakdown → coding implementation`.
+- State In: `{"user_prompt": "..."}`
+- Planner adds: `plan`
+- Architect adds: `task_plan`
+- Coder adds: `coder_state` + generated workspace files
+- Status: `completed` (or `cancelled`/`failed`) → graph terminates
 
 ---
 
-## 📦 Installation
-- Clone Repo
-```
+## 📦 Installation & Quickstart
+
+### 1. Clone Repository
+```bash
 git clone https://github.com/nitinkoberoii/Build-Buddy.git
 cd BuildBuddy
 ```
-- Install uv (recommended)
-```
+
+### 2. Install `uv` (Recommended Python Package Manager)
+```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
-Note: You can also visit the site by searching `install uv` and find the guide there.
 
-- Initialize Environment
-```
+### 3. Initialize Python Environment & Install Dependencies
+```bash
 uv sync
 ```
-- Set up API Keys\
-Create a .env file in the project root:
-```
-GROQ_API_KEY=your_key_here
+
+### 4. Configure API Keys
+Create a `.env` file in the project root:
+```env
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
-- Create the generated-project directory
-```
-mkdir generated_project-todo
-```
+---
 
-- Run BuildBuddy
+## 🌐 Running the Web Application (Recommended)
+
+### Start the FastAPI Backend Server
+```bash
+uv run python -m api.main
 ```
-.\.venv\Scripts\python.exe main.py
+*Backend server will start at `http://127.0.0.1:8000`.*
+
+### Start the React Frontend Dev Server
+Open a new terminal window:
+```bash
+cd frontend
+npm install
+npm run dev
 ```
-BuildBuddy will prompt you to enter the project request interactively. For example:
+*Frontend application will launch at `http://localhost:5173`.*
+
+---
+
+## 💻 Running via CLI Mode
+
+BuildBuddy also supports interactive command-line generation:
+```bash
+uv run python main.py
 ```
+BuildBuddy will prompt for input:
+```text
 Enter your project prompt: create a calculator app using HTML, CSS, and JavaScript
 ```
+Generated apps will appear under `generated_project-todo/`.
 
-Generated apps will appear under:
-`/generated_project-todo/`
+---
 
-> On Windows, use `uv sync` to create the virtual environment, then run the
-> `.venv\\Scripts\\python.exe` command above. The current CLI does not support a
-> `--prompt` argument.
+## 🧪 Testing & Verification
+
+### Run Backend Unit & Integration Tests
+```bash
+uv run python -m pytest
+```
+
+### Verify Frontend TypeScript & Production Build
+```bash
+cd frontend
+npm run build
+```
+
+---
+
+## 🔌 API Endpoints
+
+| Method | Route | Description |
+| --- | --- | --- |
+| `POST` | `/api/generations` | Submit prompt & start async agent generation |
+| `GET` | `/api/generations` | List all historical generation runs |
+| `GET` | `/api/generations/{id}` | Get status, state, plan, and error details |
+| `GET` | `/api/generations/{id}/events` | Stream real-time stage progress via SSE |
+| `GET` | `/api/generations/{id}/files` | Retrieve file/directory tree structure |
+| `GET` | `/api/generations/{id}/files/{path}` | Read content of a specific generated file |
+| `GET` | `/api/generations/{id}/download` | Download project workspace as a ZIP archive |
+| `POST` | `/api/generations/{id}/cancel` | Cancel an active generation run |
+| `GET` | `/api/health` | Health check endpoint |
 
 ---
 
 ## 🧪 Example Prompts
-- Create a Calculator: create a simple calculator app using HTML, CSS, and JavaScript
-- Generate a Todo App: build a todo app with add/remove/update features and a clean UI
-- Build a Weather Dashboard: create a weather dashboard in vanilla JS with API integration
+
+- **Calculator**: "create a simple calculator app using HTML, CSS, and JavaScript"
+- **Todo Application**: "build a todo app with add/remove/update features and dark theme"
+- **Weather Dashboard**: "create a weather dashboard in vanilla JS with mock forecast API integration"
 
 ---
 
-## 📁 Output Structure
-Each generated project looks like:
+## 📁 Generated Output Structure
+
+Each generated project is isolated in its own workspace:
 ```
-generated_project/
+storage/{generation_id}/project/
 │
 ├── index.html
 ├── style.css
 ├── script.js
-├── README.md
-└── test.js (optional)
+└── README.md
 ```
-All content is written automatically by the **Coder agent** using the implementation steps from the Architect.
-
----
-
-## 🔧 Configuration
-You can switch LLM providers by modifying:
-```
-llm = ChatGroq(model="gpt-oss-120b")
-```
-Supported:
-- Groq GPT-OSS models (recommended / free)
-- OpenAI GPT-4+/GPT-5 models
-- Google Gemini models
-- Local models via Ollama
-
----
-
-## 🧠 Debugging with AI Agent Debugger (PyCharm)
-BuildBuddy integrates perfectly with PyCharm’s Agent Debugger:
-- Visualize planner → architect → coder transitions
-- Inspect internal state after each step
-- Track token usage and recursion depth
-- Catch stuck loops and unintended logic
-
-This massively improves reliability and explainability.
 
 ---
 
 ## 🏁 Final Notes
-BuildBuddy is a real demonstration of practical agentic AI engineering — combining structured reasoning, tool use, iterative coding, and explainability into one cohesive system.
 
-Whether you're showcasing AI engineering skills for interviews or extending it into a full product, BuildBuddy provides a solid foundation.
+BuildBuddy demonstrates practical agentic AI software engineering — combining structured multi-agent reasoning, safe tool execution, real-time SSE progress streaming, job cancellation, and interactive workspace UI into one cohesive system.
