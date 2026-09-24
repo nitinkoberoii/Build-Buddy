@@ -11,8 +11,16 @@
 1. Keep React work in `frontend/` and use strict TypeScript plus accessible semantic components.
 2. Keep API routes thin: validate, call a service, and return typed responses.
 3. Keep LangGraph execution separate from API handlers and preserve existing Python logic unless intentionally changed.
-4. Never expose raw filesystem paths, commands, provider keys, or server environment values to the client.
-5. Every web generation requires a UUID-scoped directory; never serve concurrent jobs from `generated_project-todo/`.
+4. Invoke LangChain `@tool` objects with explicit dictionary payloads (e.g. `tool.invoke({"path": ..., "content": ...})`) rather than `.run()` positional arguments.
+5. Never expose raw filesystem paths, commands, provider keys, or server environment values to the client.
+6. Every web generation requires a UUID-scoped directory; never serve concurrent jobs from `generated_project-todo/`.
+
+## UI & Visual Standards
+
+1. Keep loading screens and workspace views isolated — do not render landing page navbars or landing footers over workspace views.
+2. Use subdued glass styling for primary error recovery actions (`.retry-btn`) rather than harsh neon backgrounds.
+3. Ensure line numbers, path metadata, and ticket identifiers use DM Mono typography.
+4. Bind primary form submission to the `Enter` key on text inputs (`Shift+Enter` for multiline breaks).
 
 ## Security
 

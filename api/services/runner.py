@@ -92,8 +92,13 @@ async def run_agent_generation(
                     step_idx = getattr(coder_state, "current_step_idx", 0)
                     await on_event("coding", f"Executed code generation step {step_idx}", {"step_index": step_idx, "status": status})
 
+        written_files = [f for f in project_dir.glob("**/*") if f.is_file() and not f.name.startswith(".")]
+        if not written_files:
+            raise RuntimeError("Generation failed: No code files were generated or written to workspace.")
+
         await on_event("completed", "Project generation completed successfully", None)
         await on_state_change(GenerationState.COMPLETED, None, None)
+
 
     except asyncio.CancelledError:
         logger.warning(f"Generation run {generation_id} was cancelled.")

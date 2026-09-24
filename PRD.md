@@ -36,12 +36,18 @@ BuildBuddy is a web platform that turns an idea into an understandable, editable
 | FR-6 | Validation, provider, timeout, and cancellation errors are understandable. |
 | FR-7 | The workflow works on current desktop and mobile browsers. |
 | FR-8 | Users can request cancellation of an active generation run at any time via the UI or API. |
+| FR-9 | The system performs automated self-healing retries (up to 3 attempts) for transient JSON/schema errors during planning and architecture phases. |
+| FR-10 | Failed generations present a structured incident ticket (`TICKET #BB-FAIL-XXXXXXXX`) with human-understandable cause analysis, expandable diagnostic logs, and clear CTAs (`Try Again`, `Return to Home`). |
+| FR-11 | Completed runs render in an interactive 35%/65% split resizable workspace container with file tree exploration, syntax-highlighted editor with line numbers, copy action, and inline edit mode. |
+| FR-12 | Prompt submission is bound to the `Enter` key (`Shift+Enter` for line breaks). |
+| FR-13 | Transient API and token notices trigger a bottom-right snackbar toast with an animated shrinking horizontal progress countdown indicator. |
 
 ## Non-functional requirements
 
 - Provider keys never reach the browser.
 - Validate prompt sizes, attachment type/size, model allowlist, paths, and ZIP contents.
 - Support idempotent client retries and resumable status reads.
+- Target fast project generation latency (~10–15 seconds total runtime).
 - Use structured generation-ID logs without sensitive data.
 - Maintain keyboard access, focus visibility, contrast, and reduced-motion support.
 
@@ -50,7 +56,7 @@ BuildBuddy is a web platform that turns an idea into an understandable, editable
 - Phase 0 (Agent core): Complete.
 - Phase 1 (Web landing): Complete.
 - Phase 2 (FastAPI backend): Complete.
-- Phase 3 (Frontend visual workspace integration & job cancellation): Complete.
+- Phase 3 (Frontend visual workspace integration, resizable containers, job cancellation, incident tickets, & snackbar toasts): Complete.
 - Phase 4 (Reliability & persistence): Next.
 
 ## Out of scope for MVP

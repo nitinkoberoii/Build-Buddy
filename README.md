@@ -13,11 +13,23 @@ Powered by **LangChain**, **LangGraph**, **FastAPI**, **React + Vite**, **Pydant
 ### 🧠 Planner → Architect → Coder agent pipeline
 Converts user prompts into structured engineering plans, detailed file-level tasks, and actual executable code.
 
-### 🌐 Modern Web Interface & Interactive Workspace
-Full-featured React + TypeScript frontend featuring a responsive landing page, model picker, real-time stage progress dashboard (`LoadingScreen`), terminal event logs via Server-Sent Events (SSE), interactive file tree explorer (`FileTree`), live syntax-highlighted code viewer (`CodeViewer`), and one-click ZIP exporter (`ProjectWorkspace`).
+### ⚡ Fast Direct 1-Pass Code Generation & Self-Healing Retries
+Achieves ~10–15s generation speeds using 1-pass LLM code generation. Features automated 3-attempt self-healing retry loops in `planner` and `architect` nodes to resolve JSON schema formatting issues before execution fails.
+
+### 🌐 Modern Resizable 2-Container Workspace UI
+Full-featured React + TypeScript frontend featuring a 35%/65% split resizable layout with custom drag handle, top header bar (Logo, Brand text, Project Name, ZIP download, Start New Project, User profile avatar `NK`), interactive file tree explorer (`FileTree`), live syntax-highlighted code editor (`CodeViewer`) with line numbers and copy/edit badges.
+
+### 🚨 Failed Generation Incident Ticket & Diagnostic Recovery
+If generation fails due to API limits or invalid output, an incident ticket card (`TICKET #BB-FAIL-XXXXXXXX`) renders human-understandable error descriptions, raw diagnostic logs toggle, and subdued glass action buttons (`Try Again`, `Return to Home`).
+
+### 🔔 Bottom-Right Snackbar Toast System
+Displays transient alerts for API/token notices with an animated shrinking horizontal progress countdown bar (`SnackbarToast`).
+
+### ⌨️ Keyboard-Bound Prompt Submission
+Press `Enter` in the main prompt textarea to trigger generation immediately (`Shift+Enter` for multiline input).
 
 ### ⚡ Job Cancellation
-Cancel active AI generations mid-run with immediate tool execution interruption and state cleanups.
+Cancel active AI generations mid-run with immediate tool execution interruption via `.cancelled` path guards.
 
 ### 🗂️ UUID-Scoped Isolation
 Every generation run operates within an isolated UUID workspace (`storage/{generation_id}/project`), preventing concurrent file collisions and directory path traversal.
@@ -26,7 +38,7 @@ Every generation run operates within an isolated UUID workspace (`storage/{gener
 AI writes and edits files via secure I/O tools (`read_file`, `write_file`, `list_files`, `run_cmd`) with path validation and cancellation checks.
 
 ### 🔍 Agent Debugger & Tracing
-Visualizes node-level state transitions (`planner → architect → coder`) and LLM trace execution.
+Visualizes node-level state transitions (`planner → architect → coder`) and LLM trace execution via real-time SSE streams.
 
 ---
 

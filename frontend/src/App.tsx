@@ -49,6 +49,8 @@ const modelOptions = [
   { label: "Mixtral 8x7B", value: "mixtral-8x7b-32768" },
 ];
 
+import { SnackbarToast } from "./components/SnackbarToast";
+
 export default function App() {
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(modelOptions[0].value);
@@ -59,6 +61,9 @@ export default function App() {
   // Active generation state
   const [activeGeneration, setActiveGeneration] = useState<GenerationResponse | null>(null);
   const [events, setEvents] = useState<GenerationEvent[]>([]);
+
+  // Snackbar Toast Notice state
+  const [toast, setToast] = useState<{ title: string; message: string; type?: "warning" | "error" | "info" } | null>(null);
 
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -79,6 +84,16 @@ export default function App() {
           if (prev.some((e) => e.id === evt.id)) return prev;
           return [...prev, evt];
         });
+
+        // Trigger snackbar notice if event contains token/rate limit warning
+        const msg = evt.message.toLowerCase();
+        if (msg.includes("token") || msg.includes("rate limit") || msg.includes("quota")) {
+          setToast({
+            title: "API & Token Notice",
+            message: evt.message,
+            type: "warning",
+          });
+        }
       },
       (err) => {
         console.warn("SSE connection interrupted, relying on status polling:", err);
@@ -92,6 +107,13 @@ export default function App() {
         setActiveGeneration(latest);
         if (["completed", "failed", "cancelled"].includes(latest.state)) {
           clearInterval(interval);
+          if (latest.state === "failed" && latest.error) {
+            setToast({
+              title: "Generation Pipeline Error",
+              message: latest.error,
+              type: "error",
+            });
+          }
         }
       } catch (err) {
         console.error("Polling error:", err);
@@ -104,10 +126,18 @@ export default function App() {
     };
   }, [activeGeneration?.id, activeGeneration?.state]);
 
+
+  function clearUrlHash() {
+    if (window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!prompt.trim() || isSubmitting) return;
 
+    clearUrlHash();
     setIsSubmitting(true);
     setError(null);
     setEvents([]);
@@ -133,7 +163,27 @@ export default function App() {
     }
   }
 
+  async function handleRetry() {
+    const currentPrompt = activeGeneration?.prompt || prompt;
+    if (!currentPrompt.trim() || isSubmitting) return;
+
+    clearUrlHash();
+    setIsSubmitting(true);
+    setError(null);
+    setEvents([]);
+
+    try {
+      const run = await createGeneration(currentPrompt.trim(), model);
+      setActiveGeneration(run);
+    } catch (err: any) {
+      setError(err.message || "Failed to retry project generation.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function handleNewProject() {
+    clearUrlHash();
     setActiveGeneration(null);
     setEvents([]);
     setError(null);
@@ -165,22 +215,21 @@ export default function App() {
     <main>
       {/* Dynamic View Logic */}
       {activeGeneration ? (
-        <>
-          {renderNavbar()}
-          {activeGeneration.state === "completed" ? (
-            <ProjectWorkspace
-              generation={activeGeneration}
-              onNewProject={handleNewProject}
-            />
-          ) : (
-            <LoadingScreen
-              generation={activeGeneration}
-              events={events}
-              onCancel={handleCancel}
-              onReturnHome={handleNewProject}
-            />
-          )}
-        </>
+        activeGeneration.state === "completed" ? (
+          <ProjectWorkspace
+            generation={activeGeneration}
+            onNewProject={handleNewProject}
+            userInitials="NK"
+          />
+        ) : (
+          <LoadingScreen
+            generation={activeGeneration}
+            events={events}
+            onCancel={handleCancel}
+            onReturnHome={handleNewProject}
+            onRetry={handleRetry}
+          />
+        )
       ) : (
         <>
           {/* Hero Section & Prompt Form */}
@@ -212,10 +261,19 @@ export default function App() {
                     setPrompt(event.target.value);
                     setError(null);
                   }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      if (prompt.trim() && !isSubmitting) {
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }
+                  }}
                   placeholder="Build a modern calculator app in HTML, CSS, and JS..."
                   rows={3}
                   disabled={isSubmitting}
                 />
+
 
                 {error && <div className="error-banner">{error}</div>}
 
@@ -324,46 +382,59 @@ export default function App() {
               ))}
             </div>
           </section>
+
+          {/* Footer (Landing page only) */}
+          <footer id="footer">
+            <div className="shell footer-grid">
+              <div className="footer-brand">
+                <a className="brand" href="#home" onClick={handleNewProject}>
+                  <Mark /> <span className="brand-name">BuildBuddy</span>
+                </a>
+                <p>
+                  An AI-powered engineering companion that turns your words into
+                  thoughtful, editable software.
+                </p>
+              </div>
+              <div>
+                <h3>Explore</h3>
+                <a href="#home">Home</a>
+                <a href="#how-it-works">How it works</a>
+                <a href="#voices">Community</a>
+                <a href="#prompt">Start building</a>
+              </div>
+              <div>
+                <h3>Resources</h3>
+                <a href="#footer">Documentation</a>
+                <a href="#footer">Project guide</a>
+                <a href="#footer">Changelog</a>
+                <a href="#footer">Support</a>
+              </div>
+              <div>
+                <h3>Legal</h3>
+                <a href="#footer">Privacy</a>
+                <a href="#footer">Terms</a>
+                <a href="#footer">Cookies</a>
+              </div>
+            </div>
+            <div className="shell copyright">
+              © {new Date().getFullYear()} BuildBuddy. Built with curiosity.
+            </div>
+          </footer>
         </>
       )}
 
-      {/* Footer */}
-      <footer id="footer">
-        <div className="shell footer-grid">
-          <div className="footer-brand">
-            <a className="brand" href="#home" onClick={handleNewProject}>
-              <Mark /> <span className="brand-name">BuildBuddy</span>
-            </a>
-            <p>
-              An AI-powered engineering companion that turns your words into
-              thoughtful, editable software.
-            </p>
-          </div>
-          <div>
-            <h3>Explore</h3>
-            <a href="#home">Home</a>
-            <a href="#how-it-works">How it works</a>
-            <a href="#voices">Community</a>
-            <a href="#prompt">Start building</a>
-          </div>
-          <div>
-            <h3>Resources</h3>
-            <a href="#footer">Documentation</a>
-            <a href="#footer">Project guide</a>
-            <a href="#footer">Changelog</a>
-            <a href="#footer">Support</a>
-          </div>
-          <div>
-            <h3>Legal</h3>
-            <a href="#footer">Privacy</a>
-            <a href="#footer">Terms</a>
-            <a href="#footer">Cookies</a>
-          </div>
-        </div>
-        <div className="shell copyright">
-          © {new Date().getFullYear()} BuildBuddy. Built with curiosity.
-        </div>
-      </footer>
+      {/* Bottom-Right Snackbar Toast Notification */}
+      {toast && (
+        <SnackbarToast
+          title={toast.title}
+          message={toast.message}
+          type={toast.type}
+          durationMs={6000}
+          onClose={() => setToast(null)}
+        />
+      )}
     </main>
   );
 }
+
+
