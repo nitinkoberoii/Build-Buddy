@@ -29,8 +29,8 @@
   - Implemented Bottom-Right Snackbar Toast component (`SnackbarToast.tsx`) with animated horizontal progress countdown line for API notices, rate limits, and token warnings.
   - Bound `Enter` key on prompt textarea for instant form submission (`Shift+Enter` for multiline) and cleaned URL hash routing (`clearUrlHash()`).
   - Synchronized all repository documentation (`README.md`, `PRD.md`, `architecture.md`, `design.md`, `memory.md`, `phases.md`, `rules.md`).
-  - Verified full end-to-end user workflow from prompt submission to live progress, cancellation handling, file exploration, real-time editing, and ZIP export.
-
+  - Enhanced Architect & Coder LLM agent prompts in `agent/prompts.py` to produce rich, modular multi-file architectures (HTML, CSS modules, JS modules, animation controllers, data files) for complex prompts and enforce scrollable-container layout specifications (`html, body { height: 100vh; overflow: hidden; }` + container scrolling).
+  - Fixed `.workspace-view-root` in `frontend/src/styles.css` with `height: 100vh; max-height: 100vh; overflow: hidden;` so the browser page scrollbar is eliminated and only the Workspace panel containers scroll.
 - Project architecture, design, PRD, phase, memory, and rule documents updated and synchronized.
 
 

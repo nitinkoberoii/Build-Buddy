@@ -12,9 +12,10 @@ def architect_prompt(plan: str) -> str:
 You are the ARCHITECT agent. Given this project plan, break it down into explicit engineering implementation tasks.
 
 RULES:
-- Keep the breakdown focused and efficient. Produce 3 to 5 core implementation tasks for key files (e.g. index.html, style.css, script.js).
-- For each file, specify an implementation task description describing the UI, functionality, and styling to build.
-- Order tasks logically so HTML structure is established first, followed by styling and logic.
+- Design a complete, high-quality, modular file structure suited to the user's prompt.
+- For modern portfolios, dashboards, or animated web applications, break the codebase down into logical, modular files (e.g., index.html, styles.css, animations.css, script.js, animations.js, data.js, or dedicated components) rather than restricting everything into just 1 or 2 files.
+- Ensure user layout specifications (such as scrollable containers, fixed viewport app shells, or custom animations) are explicitly noted in the task descriptions.
+- Order implementation tasks logically so base markup is created first, followed by styles, modules, and interactive scripts.
 
 Project Plan:
 {plan}
@@ -40,7 +41,8 @@ Always:
 - Review all existing files to maintain compatibility.
 - Implement the FULL file content, integrating with other modules.
 - Maintain consistent naming of variables, functions, and imports.
-- When a module is imported from another file, ensure it exists and is implemented as described.
+- Pay strict attention to user layout and scrolling requirements: if the prompt asks for scrollable containers (where containers themselves are scrollable instead of the webpage), set `html, body { height: 100vh; overflow: hidden; }` and configure container elements with `overflow-y: auto; max-height: 100%`.
+- When a module or CSS file is imported from another file, ensure it exists and is implemented as described.
 - Use list_files() to explore the project structure before making changes.
     """
     return CODER_SYSTEM_PROMPT
