@@ -32,9 +32,12 @@
   - Fast 1-pass LLM direct file generation (~10–15s total generation time).
   - Failed generation Incident Ticket UI (`TICKET #BB-FAIL-XXXXXXXX`) with human-readable error descriptions, raw log toggle, and subdued glass action buttons (`Try Again`, `Return to Home`).
   - Bottom-right snackbar toast notifications (`SnackbarToast.tsx`) with animated shrinking progress countdown line.
-  - Keyboard submission binding (`Enter` key on prompt textarea) and route URL hash scrubbing.
+  - Keyboard submission binding (`Enter` key on prompt textarea).
+  - Thread-Based AI Workspace Refinement Engine (`POST /api/generations/{id}/refine` & `refine_project_agent`) for incremental file updates and file creation.
+  - Interactive AI edit prompt panel below file tree with scrollable thread message log (`ThreadMessage`), non-overlapping flexbox layout, and message action toolbars (`📋 Copy`, `🔄 Regenerate`, `✏️ Edit`).
+  - Persistent URL Hash & Path Routing (`#/project/{id}`) enabling page reloads (`F5`), direct link sharing, and back/forward browser navigation support.
 
-**Exit criterion met:** a browser user can submit a prompt (via click or `Enter`), monitor progress, cancel active runs, inspect generated code in a resizable split workspace, recover gracefully from generation errors via incident tickets, receive transient API/token notices, and download a project without a terminal.
+**Exit criterion met:** a browser user can submit a prompt (via click or `Enter`), monitor progress, cancel active runs, inspect generated code in a resizable split workspace, perform incremental AI file edits within a thread session, reload/bookmark workspaces via persistent URLs, recover gracefully from generation errors via incident tickets, receive transient API/token notices, and download a project without a terminal.
 
 ## Phase 4 — reliability (next / in progress)
 
