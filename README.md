@@ -40,11 +40,17 @@ AI writes and edits files via secure I/O tools (`read_file`, `write_file`, `list
 ### 🔍 Agent Debugger & Tracing
 Visualizes node-level state transitions (`planner → architect → coder`) and LLM trace execution via real-time SSE streams.
 
+### 💬 Thread-Based AI Workspace Refinement & Edit Engine
+Submit iterative prompt requests directly within the Code Workspace to update existing files or create new files targeting specific features without wiping or re-generating the codebase from scratch. Features an integrated thread chat feed with quick prompt action buttons (`📋 Copy`, `🔄 Regenerate`, `✏️ Edit`).
+
+### 🔗 Persistent URL Routing (`#/project/{id}`)
+Supports clean URL hash routing (`#/project/<generation_id>`) and path routing (`/project/<generation_id>`). Reloading (`F5`) or directly opening a saved project link automatically restores the active Code Workspace screen without returning to the landing page.
+
 ---
 
 ## 🏗️ Architecture Overview
 
-BuildBuddy uses a FastAPI backend with a LangGraph state machine across three core agent nodes:
+BuildBuddy uses a FastAPI backend with a LangGraph state machine across core agent nodes:
 
 ```
 User Prompt (Web UI or CLI)
@@ -67,12 +73,10 @@ User Prompt (Web UI or CLI)
  +------------------+
        ↓
  +------------------+
- |      Coder       |
- |------------------|
- | Iteratively      |
- | writes/updates   |
- | files using      |
- | LLM + tools      |
+ |      Coder       | ◄─── Incremental Refinement Prompts
+ |------------------|      (via Refinement Agent Node)
+ | Writes/updates   |
+ | workspace files  |
  +------------------+
        ↓
   Project Workspace
@@ -167,8 +171,9 @@ npm run build
 | Method | Route | Description |
 | --- | --- | --- |
 | `POST` | `/api/generations` | Submit prompt & start async agent generation |
+| `POST` | `/api/generations/{id}/refine` | Submit edit prompt to refine existing workspace files |
 | `GET` | `/api/generations` | List all historical generation runs |
-| `GET` | `/api/generations/{id}` | Get status, state, plan, and error details |
+| `GET` | `/api/generations/{id}` | Get status, state, plan, messages, and error details |
 | `GET` | `/api/generations/{id}/events` | Stream real-time stage progress via SSE |
 | `GET` | `/api/generations/{id}/files` | Retrieve file/directory tree structure |
 | `GET` | `/api/generations/{id}/files/{path}` | Read content of a specific generated file |

@@ -41,42 +41,45 @@ LLM Providers (Groq / OpenAI / Ollama)
 - **Explicit Tool Execution**: Calls `write_file.invoke({"path": file_path, "content": file_content})` using structured dictionaries, resolving LangChain `BaseTool.run()` argument mismatch errors.
 - **Fallback Extraction**: If the LLM wraps code inside standard message text instead of tool calls, `coder_agent` automatically parses block text and writes the payload to disk.
 
-### 3. File Verification in `runner.py`
-- Before setting status to `COMPLETED`, `runner.py` scans `storage/{id}/project`. If 0 files exist, a `RuntimeError("Project generation failed: 0 files were created.")` is raised to trigger the Incident Ticket UI.
+### 4. Incremental AI Refinement Agent (`refine_project_agent`)
+- **Targeted Codebase Updates**: Executed via `POST /api/generations/{id}/refine`. Reads existing project workspace files and applies precise edits to existing files or creates new files without resetting the workspace.
+- **Thread Message Log**: Stores thread messages (`ThreadMessage`) in run metadata (`meta.json`) and streams progress events (`refinement_queued`, `refining`, `refinement_completed`) over SSE.
 
 ## Frontend Component Architecture & UX System
 
 ```text
-App.tsx (Root State, URL Hash Scrubbing, Keyboard Binding)
+App.tsx (Root State, URL Hash & Path Routing #/project/:id, Persistence)
  ├── Landing View (Navbar, Hero Prompt Input, Model Selector, Review Section, Footer)
  ├── LoadingScreen.tsx (SSE Live Terminal Logs, Cancellation Action, Incident Ticket Card)
- ├── ProjectWorkspace.tsx (Top Toolbar Header, 35%/65% Resizable Containers, File Tree & Code Viewer)
+ ├── ProjectWorkspace.tsx (Top Toolbar, 35%/65% Resizable Containers, File Tree, Live Code Viewer, AI Edit Prompt Box)
  └── SnackbarToast.tsx (Bottom-Right Toast, Animated Horizontal Progress Line)
 ```
 
-### 1. Resizable Split Workspace Container (`ProjectWorkspace.tsx`)
+### 1. Resizable Split Workspace Container & AI Refinement Panel (`ProjectWorkspace.tsx`)
 - **Header Toolbar**: Displays BuildBuddy logo, brand name, Project Name badge, Download .ZIP CTA, "＋ Start New Project" button, and user profile avatar (`NK`).
-- **Resizable Layout**: Split into two vertically resizable container cards (default 35% left container for `FileTree`, 65% right container for `CodeViewer`). Resized dynamically via mouse drag handle (`resizer-gutter`).
+- **Resizable Layout**: Split into two vertically resizable container cards (default 35% left container for `FileTree` & AI Refinement Prompt Box, 65% right container for `CodeViewer`). Resized dynamically via mouse drag handle (`resizer-gutter`).
+- **AI Refinement Panel**: Positioned directly beneath the file tree explorer in the left panel. Contains a scrollable thread message log, action toolbar buttons (`📋 Copy`, `🔄 Regenerate`, `✏️ Edit`), and an edit prompt textarea.
 - **Code Editor (`CodeViewer.tsx`)**: Renders file header badges (`Filename`, `Language`), Copy code button, Edit mode toggle, line numbers gutter, custom dark scrollbar, and editable code textarea.
 
-### 2. Incident Ticket System (`LoadingScreen.tsx`)
-- **Trigger**: Activated when run status becomes `FAILED` or a exception is caught.
+### 2. URL Routing & Workspace Reload Persistence
+- **Route Format**: `#/project/<generation_id>` or `/project/<generation_id>`.
+- **Persistence**: Page reloads (`F5`) or direct links parse the project ID, fetch workspace data via `getGeneration(id)`, and automatically display the active workspace.
+
+### 3. Incident Ticket System (`LoadingScreen.tsx`)
+- **Trigger**: Activated when run status becomes `FAILED` or an exception is caught.
 - **UI Card**: Renders `TICKET #BB-FAIL-XXXXXXXX`, human-readable cause analysis (e.g. rate limit, schema parsing, 0 files created), expandable raw diagnostic logs, and subdued glass action buttons (`Try Again`, `Return to Home`).
 
-### 3. Snackbar Toast Notifications (`SnackbarToast.tsx`)
+### 4. Snackbar Toast Notifications (`SnackbarToast.tsx`)
 - **Transient Alerts**: Positioned at bottom-right (`fixed bottom-6 right-6`). Includes icon, title, message, close button, and an animated shrinking horizontal line indicator (`durationMs`).
-
-### 4. Input & Navigation Ergonomics
-- **Enter Key Binding**: `Enter` key on prompt textarea submits generation immediately (`Shift+Enter` preserves multi-line breaks).
-- **Route Isolation**: URL hash scrolling disabled (`clearUrlHash()`) during loading/workspace views to prevent landing navigation bars or footers from overlapping active generation screens.
 
 ## MVP API
 
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/generations` | Start a validated generation; return run ID. |
+| `POST` | `/api/generations/{id}/refine` | Submit edit prompt to refine existing workspace files. |
 | `GET` | `/api/generations` | List all generation runs. |
-| `GET` | `/api/generations/{id}` | Return state, plan, summary, and errors. |
+| `GET` | `/api/generations/{id}` | Return state, plan, messages, summary, and errors. |
 | `GET` | `/api/generations/{id}/events` | Stream progress with SSE. |
 | `GET` | `/api/generations/{id}/files` | List safe generated file tree. |
 | `GET` | `/api/generations/{id}/files/{path}` | Read one validated file. |

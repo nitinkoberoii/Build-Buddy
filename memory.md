@@ -31,6 +31,9 @@
   - Synchronized all repository documentation (`README.md`, `PRD.md`, `architecture.md`, `design.md`, `memory.md`, `phases.md`, `rules.md`).
   - Enhanced Architect & Coder LLM agent prompts in `agent/prompts.py` to produce rich, modular multi-file architectures (HTML, CSS modules, JS modules, animation controllers, data files) for complex prompts and enforce scrollable-container layout specifications (`html, body { height: 100vh; overflow: hidden; }` + container scrolling).
   - Fixed `.workspace-view-root` in `frontend/src/styles.css` with `height: 100vh; max-height: 100vh; overflow: hidden;` so the browser page scrollbar is eliminated and only the Workspace panel containers scroll.
+  - Implemented Thread-Based AI Workspace Refinement Engine (`POST /api/generations/{id}/refine` & `refine_project_agent`) for incremental file edits and file creation directly in workspace.
+  - Added AI Edit Prompt Panel, scrollable chat message feed, non-overlapping flexbox layout constraints, and message action toolbars (`📋 Copy`, `🔄 Regenerate`, `✏️ Edit`) in `ProjectWorkspace.tsx`.
+  - Implemented Persistent URL Routing (`#/project/{id}`) and back/forward browser navigation support.
 - Project architecture, design, PRD, phase, memory, and rule documents updated and synchronized.
 
 
