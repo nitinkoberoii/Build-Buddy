@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState, useCallback } from "react";
 import attachIcon from "../assets/icons/attach.png";
 import cloudIcon from "../assets/icons/cloud.png";
 import modelIcon from "../assets/icons/model.png";
@@ -127,6 +127,65 @@ export default function App() {
   }, [activeGeneration?.id, activeGeneration?.state]);
 
 
+  // URL Routing & Persistence helper
+  const navigateToProject = useCallback((id: string) => {
+    if (window.location.hash !== `#/project/${id}`) {
+      window.location.hash = `/project/${id}`;
+    }
+  }, []);
+
+  const loadProjectFromUrl = useCallback(async () => {
+    let genId: string | null = null;
+    const hash = window.location.hash;
+    const path = window.location.pathname;
+
+    const hashMatch = hash.match(/^#\/?project\/([a-zA-Z0-9-]+)/);
+    const pathMatch = path.match(/^\/project\/([a-zA-Z0-9-]+)/);
+
+    if (hashMatch) {
+      genId = hashMatch[1];
+    } else if (pathMatch) {
+      genId = pathMatch[1];
+    }
+
+    if (genId) {
+      if (activeGeneration?.id === genId) return;
+      try {
+        const run = await getGeneration(genId);
+        setActiveGeneration(run);
+      } catch (err) {
+        console.error("Failed to restore project workspace from URL:", err);
+        if (window.location.hash) {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+        setActiveGeneration(null);
+      }
+    } else if (activeGeneration && !["completed", "failed", "cancelled"].includes(activeGeneration.state)) {
+      // Keep active generation if currently running
+    } else if (!hash && activeGeneration) {
+      // Hash was cleared to return home
+      setActiveGeneration(null);
+    }
+  }, [activeGeneration?.id, activeGeneration?.state]);
+
+  // Handle URL change & restore project on page load/reload
+  useEffect(() => {
+    loadProjectFromUrl();
+    window.addEventListener("hashchange", loadProjectFromUrl);
+    window.addEventListener("popstate", loadProjectFromUrl);
+    return () => {
+      window.removeEventListener("hashchange", loadProjectFromUrl);
+      window.removeEventListener("popstate", loadProjectFromUrl);
+    };
+  }, [loadProjectFromUrl]);
+
+  // Keep URL in sync when activeGeneration changes
+  useEffect(() => {
+    if (activeGeneration?.id) {
+      navigateToProject(activeGeneration.id);
+    }
+  }, [activeGeneration?.id, navigateToProject]);
+
   function clearUrlHash() {
     if (window.location.hash) {
       window.history.replaceState(null, "", window.location.pathname);
@@ -137,7 +196,6 @@ export default function App() {
     event.preventDefault();
     if (!prompt.trim() || isSubmitting) return;
 
-    clearUrlHash();
     setIsSubmitting(true);
     setError(null);
     setEvents([]);
@@ -145,6 +203,7 @@ export default function App() {
     try {
       const run = await createGeneration(prompt.trim(), model);
       setActiveGeneration(run);
+      navigateToProject(run.id);
     } catch (err: any) {
       setError(err.message || "Failed to submit project request.");
     } finally {
@@ -167,7 +226,6 @@ export default function App() {
     const currentPrompt = activeGeneration?.prompt || prompt;
     if (!currentPrompt.trim() || isSubmitting) return;
 
-    clearUrlHash();
     setIsSubmitting(true);
     setError(null);
     setEvents([]);
@@ -175,6 +233,7 @@ export default function App() {
     try {
       const run = await createGeneration(currentPrompt.trim(), model);
       setActiveGeneration(run);
+      navigateToProject(run.id);
     } catch (err: any) {
       setError(err.message || "Failed to retry project generation.");
     } finally {
@@ -198,14 +257,9 @@ export default function App() {
   function renderNavbar() {
     return (
       <nav className="nav shell" aria-label="Main navigation">
-        <a className="brand" href="#home" onClick={handleNewProject}>
+        <a className="brand" href="/" onClick={(e) => { e.preventDefault(); handleNewProject(); }}>
           <Mark /> <span className="brand-name">BuildBuddy</span>
         </a>
-        <div className="nav-links">
-          <a href="#how-it-works">How it works</a>
-          <a href="#voices">Community</a>
-          <a href="#footer">Documentation</a>
-        </div>
         <a className="sign-in" href="#prompt">Sign in</a>
       </nav>
     );
