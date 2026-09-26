@@ -26,7 +26,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
   const [refinementPrompt, setRefinementPrompt] = useState<string>("");
   const [isRefining, setIsRefining] = useState<boolean>(false);
   const [refinementError, setRefinementError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Resizable split percentage state (default 35% left, 65% right)
   const [leftWidthPercent, setLeftWidthPercent] = useState<number>(35);
@@ -96,69 +98,86 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     }
   }, [generation.messages, isRefining]);
 
-  // Handle refinement submission
+  // Handle message copy
+  function handleCopyMessage(id: string, text: string) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  // Core refinement execution
+  const triggerRefinement = useCallback(
+    async (promptText: string) => {
+      if (!promptText.trim() || isRefining) return;
+
+      setIsRefining(true);
+      setRefinementError(null);
+
+      // Optimistically update local message thread
+      const userMsg: ThreadMessage = {
+        id: "temp-user-" + Date.now(),
+        role: "user",
+        content: promptText,
+        timestamp: new Date().toISOString(),
+      };
+
+      const asstMsg: ThreadMessage = {
+        id: "temp-asst-" + Date.now(),
+        role: "assistant",
+        content: "Analyzing codebase and applying requested edits...",
+        timestamp: new Date().toISOString(),
+        status: "refining",
+      };
+
+      setGeneration((prev) => ({
+        ...prev,
+        messages: [...(prev.messages || []), userMsg, asstMsg],
+      }));
+
+      try {
+        const updatedGen = await refineGeneration(generation.id, promptText);
+        setGeneration(updatedGen);
+
+        // Poll status until completion
+        const pollInterval = setInterval(async () => {
+          try {
+            const latest = await getGeneration(generation.id);
+            setGeneration(latest);
+
+            const lastMsg = latest.messages?.[latest.messages.length - 1];
+            if (!lastMsg || lastMsg.status !== "refining") {
+              clearInterval(pollInterval);
+              setIsRefining(false);
+              // Refresh file tree and active file content
+              await refreshFileTree(true);
+              if (selectedFile) {
+                await refreshFileContent(selectedFile);
+              }
+            }
+          } catch (err) {
+            console.error("Error polling refinement status:", err);
+            clearInterval(pollInterval);
+            setIsRefining(false);
+          }
+        }, 1500);
+
+      } catch (err: any) {
+        console.error("Refinement submission error:", err);
+        setRefinementError(err.message || "Failed to submit edit prompt");
+        setIsRefining(false);
+      }
+    },
+    [generation.id, isRefining, refreshFileContent, refreshFileTree, selectedFile]
+  );
+
+  // Handle form submission
   async function handleRefinementSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!refinementPrompt.trim() || isRefining) return;
 
-    const promptText = refinementPrompt.trim();
+    const text = refinementPrompt.trim();
     setRefinementPrompt("");
-    setIsRefining(true);
-    setRefinementError(null);
-
-    // Optimistically update local message thread
-    const userMsg: ThreadMessage = {
-      id: "temp-user-" + Date.now(),
-      role: "user",
-      content: promptText,
-      timestamp: new Date().toISOString(),
-    };
-
-    const asstMsg: ThreadMessage = {
-      id: "temp-asst-" + Date.now(),
-      role: "assistant",
-      content: "Analyzing codebase and applying requested edits...",
-      timestamp: new Date().toISOString(),
-      status: "refining",
-    };
-
-    setGeneration((prev) => ({
-      ...prev,
-      messages: [...(prev.messages || []), userMsg, asstMsg],
-    }));
-
-    try {
-      const updatedGen = await refineGeneration(generation.id, promptText);
-      setGeneration(updatedGen);
-
-      // Poll status until completion
-      const pollInterval = setInterval(async () => {
-        try {
-          const latest = await getGeneration(generation.id);
-          setGeneration(latest);
-
-          const lastMsg = latest.messages?.[latest.messages.length - 1];
-          if (!lastMsg || lastMsg.status !== "refining") {
-            clearInterval(pollInterval);
-            setIsRefining(false);
-            // Refresh file tree and active file content
-            await refreshFileTree(true);
-            if (selectedFile) {
-              await refreshFileContent(selectedFile);
-            }
-          }
-        } catch (err) {
-          console.error("Error polling refinement status:", err);
-          clearInterval(pollInterval);
-          setIsRefining(false);
-        }
-      }, 1500);
-
-    } catch (err: any) {
-      console.error("Refinement submission error:", err);
-      setRefinementError(err.message || "Failed to submit edit prompt");
-      setIsRefining(false);
-    }
+    await triggerRefinement(text);
   }
 
   function findFirstFile(nodes: FileNode[]): FileNode | null {
@@ -319,7 +338,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
           <div className="thread-refinement-panel">
             <div className="thread-panel-header">
               <span className="panel-title">✦ Edit Files with AI</span>
-              {isRefining && <span className="refinement-status-badge">Updating files...</span>}
             </div>
 
             {/* Thread Message History */}
@@ -354,6 +372,43 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                         ))}
                       </div>
                     )}
+
+                    {/* Message Quick Actions Toolbar */}
+                    <div className="msg-action-toolbar">
+                      <button
+                        className="msg-action-btn"
+                        type="button"
+                        onClick={() => handleCopyMessage(msg.id, msg.content)}
+                        title="Copy text"
+                      >
+                        {copiedId === msg.id ? "✓ Copied" : "📋 Copy"}
+                      </button>
+
+                      {msg.role === "user" && (
+                        <>
+                          <button
+                            className="msg-action-btn"
+                            type="button"
+                            onClick={() => triggerRefinement(msg.content)}
+                            disabled={isRefining}
+                            title="Regenerate edit with this prompt"
+                          >
+                            🔄 Regenerate
+                          </button>
+                          <button
+                            className="msg-action-btn"
+                            type="button"
+                            onClick={() => {
+                              setRefinementPrompt(msg.content);
+                              promptInputRef.current?.focus();
+                            }}
+                            title="Edit prompt in input box"
+                          >
+                            ✏️ Edit
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
                 <div ref={messagesEndRef} />
@@ -367,6 +422,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             {/* Refinement Prompt Form */}
             <form className="thread-prompt-form" onSubmit={handleRefinementSubmit}>
               <textarea
+                ref={promptInputRef}
                 className="thread-prompt-input"
                 value={refinementPrompt}
                 onChange={(e) => setRefinementPrompt(e.target.value)}
