@@ -29,6 +29,9 @@
 3. Normalize/validate all paths before reading, writing, serving, or archiving files.
 4. Allowlist model providers and IDs.
 5. Add rate limits and known-origin CORS before public deployment.
+6. Treat generated code and user uploads as untrusted. Never execute them on API or worker hosts; any future execution requires a disposable, resource-limited sandbox.
+7. Enforce organization ownership in server queries, never from a client-supplied user or project identifier.
+8. Do not claim SOC 2, ISO 27001, GDPR, or other compliance certification without legal review, implemented controls, and—where applicable—independent assessment.
 
 ## Quality
 

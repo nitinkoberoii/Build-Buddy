@@ -44,13 +44,14 @@
 
 ## Immediate next task
 
-Phase 4 (Reliability & Persistence):
+Phase 4A — core platform foundation. Start with the data/ownership boundary before deploying a queue or login screen:
 
-1. Implement SQLite local database persistence for runs and events in `storage/`.
-2. Implement task runner timeout policies, background queue management, rate limits, and CORS configuration.
-3. Add end-to-end integration tests and CI pipeline configuration.
+1. Define SQLAlchemy models and Alembic migrations for organizations, memberships, projects, generations, events, snapshots, artifacts, and audit logs.
+2. Replace JSON/in-memory run metadata with repository-backed persistence while preserving existing API contracts.
+3. Apply ownership checks to every generation, refinement, file, artifact, event, and download operation.
+4. Select one durable queue architecture (Redis + ARQ or Redis + Celery), document the decision, and move generation execution into workers.
+5. Add object-storage abstraction and snapshot manifests; do not add frontend authentication until the backend tenancy model is enforced.
 
 ## Agent guidance
 
 Read `rules.md`, `architecture.md`, and the relevant `design.md` section before work. Never expose provider keys or raw server paths. Update this file when milestones, limitations, or next work change.
-
