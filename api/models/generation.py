@@ -16,6 +16,17 @@ class CreateGenerationRequest(BaseModel):
     model: Optional[str] = Field(default=None, description="Allowlisted LLM model identifier")
     attachments: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional prompt attachments metadata")
 
+class RefineGenerationRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=5000, description="Refinement or edit prompt for the workspace")
+
+class ThreadMessage(BaseModel):
+    id: str
+    role: str
+    content: str
+    timestamp: str
+    status: Optional[str] = None
+    files_changed: Optional[List[str]] = None
+
 class GenerationEvent(BaseModel):
     id: str
     generation_id: str
@@ -34,6 +45,7 @@ class GenerationResponse(BaseModel):
     plan: Optional[Dict[str, Any]] = None
     task_plan: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    messages: List[ThreadMessage] = Field(default_factory=list)
 
 class FileNode(BaseModel):
     name: str

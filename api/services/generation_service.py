@@ -15,8 +15,9 @@ from api.models.generation import (
     GenerationEvent,
     FileNode,
     FileContentResponse,
+    ThreadMessage,
 )
-from api.services.runner import run_agent_generation
+from api.services.runner import run_agent_generation, run_agent_refinement
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,13 @@ class GenerationService:
         gen_id = str(uuid.uuid4())
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+        initial_user_msg = ThreadMessage(
+            id=str(uuid.uuid4()),
+            role="user",
+            content=prompt,
+            timestamp=now,
+        )
+
         run = GenerationResponse(
             id=gen_id,
             prompt=prompt,
@@ -83,6 +91,7 @@ class GenerationService:
             state=GenerationState.QUEUED,
             created_at=now,
             updated_at=now,
+            messages=[initial_user_msg],
         )
 
         self._runs[gen_id] = run
@@ -123,6 +132,19 @@ class GenerationService:
                     run.task_plan = partial_data["task_plan"]
             if error:
                 run.error = error
+
+            if state == GenerationState.COMPLETED:
+                if not any(m.role == "assistant" for m in run.messages):
+                    run.messages.append(
+                        ThreadMessage(
+                            id=str(uuid.uuid4()),
+                            role="assistant",
+                            content="Initial project workspace generated successfully.",
+                            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            status="completed",
+                        )
+                    )
+
             self._save_run_meta(run)
 
         try:
@@ -132,6 +154,86 @@ class GenerationService:
                 project_dir=project_dir,
                 on_event=on_event,
                 on_state_change=on_state_change,
+                is_cancelled_check=lambda: self._cancel_flags.get(gen_id, False),
+            )
+        finally:
+            self._active_tasks.pop(gen_id, None)
+
+    def refine_generation(self, generation_id: str, prompt: str) -> GenerationResponse:
+        """Appends a new refinement prompt to an existing generation thread and executes edits."""
+        run = self.get_generation(generation_id)
+        if not run:
+            raise ValueError(f"Generation run '{generation_id}' not found")
+
+        if generation_id in self._active_tasks:
+            raise ValueError("A task is already actively executing for this generation thread. Please wait until it completes.")
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        user_msg = ThreadMessage(
+            id=str(uuid.uuid4()),
+            role="user",
+            content=prompt,
+            timestamp=now,
+        )
+        asst_msg_id = str(uuid.uuid4())
+        asst_msg = ThreadMessage(
+            id=asst_msg_id,
+            role="assistant",
+            content="Refining codebase...",
+            timestamp=now,
+            status="refining",
+        )
+        run.messages.extend([user_msg, asst_msg])
+        run.updated_at = now
+        self._save_run_meta(run)
+
+        self.record_event(generation_id, "refinement_queued", f"Refinement prompt submitted: {prompt[:60]}...")
+
+        project_dir = self._get_project_dir(generation_id)
+        task = asyncio.create_task(
+            self._execute_refinement(generation_id, prompt, project_dir, asst_msg_id)
+        )
+        self._active_tasks[generation_id] = task
+
+        return run
+
+    async def _execute_refinement(self, gen_id: str, prompt: str, project_dir: pathlib.Path, asst_msg_id: str) -> None:
+        async def on_event(stage: str, message: str, data: Optional[Dict[str, Any]] = None):
+            self.record_event(gen_id, stage, message, data)
+
+        async def on_complete(summary: str, files_changed: List[str]):
+            run = self._runs.get(gen_id)
+            if run:
+                for msg in run.messages:
+                    if msg.id == asst_msg_id:
+                        msg.content = summary
+                        msg.status = "completed"
+                        msg.files_changed = files_changed
+                        break
+                run.state = GenerationState.COMPLETED
+                run.updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                self._save_run_meta(run)
+
+        async def on_failure(error_msg: str):
+            run = self._runs.get(gen_id)
+            if run:
+                for msg in run.messages:
+                    if msg.id == asst_msg_id:
+                        msg.content = f"Failed to apply edits: {error_msg}"
+                        msg.status = "failed"
+                        break
+                run.updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                self._save_run_meta(run)
+
+        try:
+            await run_agent_refinement(
+                generation_id=gen_id,
+                prompt=prompt,
+                project_dir=project_dir,
+                on_event=on_event,
+                on_complete=on_complete,
+                on_failure=on_failure,
                 is_cancelled_check=lambda: self._cancel_flags.get(gen_id, False),
             )
         finally:

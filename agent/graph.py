@@ -246,6 +246,103 @@ def coder_agent(state: dict) -> dict:
     return {"coder_state": coder_state}
 
 
+def refine_project_agent(user_prompt: str, project_dir) -> dict:
+    """Modifies targeted project file(s) or creates a single new file based on user edit request."""
+    set_project_root(project_dir)
+    check_cancellation_active()
+
+    all_files = []
+    for item in project_dir.glob("**/*"):
+        if item.is_file() and not item.name.startswith("."):
+            rel_path = str(item.relative_to(project_dir))
+            try:
+                with open(item, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                all_files.append({"path": rel_path, "content": content})
+            except Exception:
+                pass
+
+    files_summary = ""
+    for f in all_files:
+        files_summary += f"\n--- FILE: {f['path']} ---\n{f['content']}\n"
+
+    system_prompt = (
+        "You are BuildBuddy, an expert senior web developer performing a targeted incremental update to an existing codebase.\n"
+        "RULES:\n"
+        "1. DO NOT rewrite the entire codebase unnecessarily. Modify ONLY the files relevant to the user request, or create a new file if explicitly requested.\n"
+        "2. Provide COMPLETE production-ready file contents for any modified or new files (no placeholders, no '// ... existing code').\n"
+        "3. Keep all existing features and styling intact unless the user requested changing them.\n\n"
+        "Existing Codebase Files:\n"
+        f"{files_summary}\n\n"
+        "User Edit Request:\n"
+        f"{user_prompt}\n\n"
+        "Respond strictly with valid JSON matching this schema:\n"
+        "{\n"
+        '  "summary": "Clear, short bullet summary of changes made",\n'
+        '  "changes": [\n'
+        '    {\n'
+        '      "filepath": "relative/path/to/file.ext",\n'
+        '      "action": "update" or "create",\n'
+        '      "content": "COMPLETE full content of the file"\n'
+        '    }\n'
+        '  ]\n'
+        "}"
+    )
+
+    check_cancellation_active()
+    llm_json = llm.bind(response_format={"type": "json_object"})
+
+    max_retries = 3
+    last_error = None
+    resp_dict = None
+
+    for attempt in range(1, max_retries + 1):
+        check_cancellation_active()
+        try:
+            p_text = system_prompt
+            if last_error:
+                p_text += f"\n\nCRITICAL FIX: Your previous JSON response failed with: {last_error}. Ensure valid JSON schema."
+
+            response = llm_json.invoke(p_text)
+            import json
+
+            resp_dict = json.loads(response.content)
+            if isinstance(resp_dict, dict) and "changes" in resp_dict:
+                break
+        except Exception as e:
+            last_error = str(e)
+            print(f"Refinement attempt {attempt}/{max_retries} failed: {e}")
+            if attempt == max_retries:
+                raise ValueError(f"Refinement agent failed after {max_retries} attempts: {e}")
+
+    if not resp_dict or not isinstance(resp_dict.get("changes"), list):
+        raise ValueError("Refinement agent failed to produce valid file changes list.")
+
+    modified_paths = []
+    summary = str(resp_dict.get("summary") or "Applied requested project edits.").strip()
+
+    for change in resp_dict["changes"]:
+        check_cancellation_active()
+        if not isinstance(change, dict):
+            continue
+        filepath = str(change.get("filepath", "")).strip().lstrip("/\\")
+        content = str(change.get("content", "")).strip()
+        if not filepath or not content:
+            continue
+
+        if content.startswith("```"):
+            lines = content.split("\n")
+            if len(lines) >= 2:
+                end_idx = -1 if lines[-1].strip().startswith("```") else len(lines)
+                content = "\n".join(lines[1:end_idx]).strip()
+
+        write_file.invoke({"path": filepath, "content": content})
+        modified_paths.append(filepath)
+
+    return {
+        "summary": summary,
+        "files_changed": modified_paths,
+    }
 
 
 graph = StateGraph(dict)
@@ -269,3 +366,4 @@ if __name__ == "__main__":
     result = agent.invoke({"user_prompt": "Build a colourful modern todo app in html css and js"},
                           {"recursion_limit": 100})
     print("Final State:", result)
+

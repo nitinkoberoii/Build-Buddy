@@ -27,6 +27,26 @@ export async function createGeneration(
   return response.json();
 }
 
+export async function refineGeneration(
+  id: string,
+  prompt: string
+): Promise<GenerationResponse> {
+  const response = await fetch(`${API_BASE}/generations/${id}/refine`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to submit refinement edit request");
+  }
+
+  return response.json();
+}
+
 export async function getGeneration(id: string): Promise<GenerationResponse> {
   const response = await fetch(`${API_BASE}/generations/${id}`);
   if (!response.ok) {

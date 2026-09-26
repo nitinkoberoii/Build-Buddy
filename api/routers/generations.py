@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 
 from api.models.generation import (
     CreateGenerationRequest,
+    RefineGenerationRequest,
     GenerationResponse,
     GenerationEvent,
     FileNode,
@@ -22,6 +23,18 @@ async def create_generation(request: CreateGenerationRequest):
         attachments=request.attachments,
     )
     return run
+
+@router.post("/{generation_id}/refine", response_model=GenerationResponse)
+async def refine_generation(generation_id: str, request: RefineGenerationRequest):
+    """Submits an edit/refinement prompt to an existing generation thread."""
+    try:
+        run = generation_service.refine_generation(
+            generation_id=generation_id,
+            prompt=request.prompt,
+        )
+        return run
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("", response_model=List[GenerationResponse])
 async def list_generations():

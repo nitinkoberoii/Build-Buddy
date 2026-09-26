@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { GenerationResponse, FileNode } from "../types";
-import { getFileTree, getFileContent, getDownloadUrl } from "../api";
+import { GenerationResponse, FileNode, ThreadMessage } from "../types";
+import { getFileTree, getFileContent, getDownloadUrl, refineGeneration, getGeneration, subscribeToEvents } from "../api";
 import { FileTree } from "./FileTree";
 import { CodeViewer } from "./CodeViewer";
 
@@ -11,66 +11,155 @@ interface ProjectWorkspaceProps {
 }
 
 export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
-  generation,
+  generation: initialGeneration,
   onNewProject,
   userInitials = "NK",
 }) => {
+  const [generation, setGeneration] = useState<GenerationResponse>(initialGeneration);
   const [files, setFiles] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(true);
   const [isLoadingContent, setIsLoadingContent] = useState<boolean>(false);
 
+  // Refinement thread state
+  const [refinementPrompt, setRefinementPrompt] = useState<string>("");
+  const [isRefining, setIsRefining] = useState<boolean>(false);
+  const [refinementError, setRefinementError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
   // Resizable split percentage state (default 35% left, 65% right)
   const [leftWidthPercent, setLeftWidthPercent] = useState<number>(35);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
 
-  // File tree fetching
+  // Update generation state when prop changes
   useEffect(() => {
-    let isMounted = true;
-    setIsLoadingFiles(true);
+    setGeneration(initialGeneration);
+  }, [initialGeneration]);
 
-    getFileTree(generation.id)
-      .then((nodes) => {
-        if (!isMounted) return;
+  // Helper to load file tree
+  const refreshFileTree = useCallback(
+    async (keepSelected: boolean = true) => {
+      setIsLoadingFiles(true);
+      try {
+        const nodes = await getFileTree(generation.id);
         setFiles(nodes);
 
-        const firstFile = findFirstFile(nodes);
-        if (firstFile) {
-          setSelectedFile(firstFile.path);
+        if (!selectedFile || !keepSelected) {
+          const firstFile = findFirstFile(nodes);
+          if (firstFile) {
+            setSelectedFile(firstFile.path);
+          }
         }
-      })
-      .catch((err) => console.error("Error loading file tree:", err))
-      .finally(() => {
-        if (isMounted) setIsLoadingFiles(false);
-      });
+      } catch (err) {
+        console.error("Error loading file tree:", err);
+      } finally {
+        setIsLoadingFiles(false);
+      }
+    },
+    [generation.id, selectedFile]
+  );
 
-    return () => {
-      isMounted = false;
-    };
+  // Helper to load file content
+  const refreshFileContent = useCallback(
+    async (path: string) => {
+      setIsLoadingContent(true);
+      try {
+        const res = await getFileContent(generation.id, path);
+        setFileContent(res.content);
+      } catch (err) {
+        console.error("Error reading file:", err);
+      } finally {
+        setIsLoadingContent(false);
+      }
+    },
+    [generation.id]
+  );
+
+  // File tree initial loading
+  useEffect(() => {
+    refreshFileTree(false);
   }, [generation.id]);
 
-  // File content fetching
+  // File content loading
   useEffect(() => {
-    if (!selectedFile) return;
-    let isMounted = true;
-    setIsLoadingContent(true);
+    if (selectedFile) {
+      refreshFileContent(selectedFile);
+    }
+  }, [selectedFile]);
 
-    getFileContent(generation.id, selectedFile)
-      .then((res) => {
-        if (!isMounted) return;
-        setFileContent(res.content);
-      })
-      .catch((err) => console.error("Error reading file:", err))
-      .finally(() => {
-        if (isMounted) setIsLoadingContent(false);
-      });
+  // Scroll to bottom of thread messages
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [generation.messages, isRefining]);
 
-    return () => {
-      isMounted = false;
+  // Handle refinement submission
+  async function handleRefinementSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!refinementPrompt.trim() || isRefining) return;
+
+    const promptText = refinementPrompt.trim();
+    setRefinementPrompt("");
+    setIsRefining(true);
+    setRefinementError(null);
+
+    // Optimistically update local message thread
+    const userMsg: ThreadMessage = {
+      id: "temp-user-" + Date.now(),
+      role: "user",
+      content: promptText,
+      timestamp: new Date().toISOString(),
     };
-  }, [generation.id, selectedFile]);
+
+    const asstMsg: ThreadMessage = {
+      id: "temp-asst-" + Date.now(),
+      role: "assistant",
+      content: "Analyzing codebase and applying requested edits...",
+      timestamp: new Date().toISOString(),
+      status: "refining",
+    };
+
+    setGeneration((prev) => ({
+      ...prev,
+      messages: [...(prev.messages || []), userMsg, asstMsg],
+    }));
+
+    try {
+      const updatedGen = await refineGeneration(generation.id, promptText);
+      setGeneration(updatedGen);
+
+      // Poll status until completion
+      const pollInterval = setInterval(async () => {
+        try {
+          const latest = await getGeneration(generation.id);
+          setGeneration(latest);
+
+          const lastMsg = latest.messages?.[latest.messages.length - 1];
+          if (!lastMsg || lastMsg.status !== "refining") {
+            clearInterval(pollInterval);
+            setIsRefining(false);
+            // Refresh file tree and active file content
+            await refreshFileTree(true);
+            if (selectedFile) {
+              await refreshFileContent(selectedFile);
+            }
+          }
+        } catch (err) {
+          console.error("Error polling refinement status:", err);
+          clearInterval(pollInterval);
+          setIsRefining(false);
+        }
+      }, 1500);
+
+    } catch (err: any) {
+      console.error("Refinement submission error:", err);
+      setRefinementError(err.message || "Failed to submit edit prompt");
+      setIsRefining(false);
+    }
+  }
 
   function findFirstFile(nodes: FileNode[]): FileNode | null {
     for (const node of nodes) {
@@ -153,6 +242,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
   const plan = generation.plan;
   const projectName = plan?.name || "Generated Application";
   const totalFileCount = countFiles(files);
+  const messages = generation.messages || [];
 
   return (
     <div className={`workspace-view-root ${isDragging ? "is-resizing" : ""}`}>
@@ -196,7 +286,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
       {/* Main Workspace Split Layout: 35% Left Container, 65% Right Container */}
       <div className="workspace-split-container" ref={splitContainerRef}>
-        {/* Container 1: Left Container (35% default, Code files / Repo Tree) */}
+        {/* Container 1: Left Container (35% default, Code files / Repo Tree + AI Refinement Prompt Box) */}
         <div
           className="workspace-container-card left-container"
           style={{ flexBasis: `${leftWidthPercent}%`, width: `${leftWidthPercent}%` }}
@@ -223,6 +313,84 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 onSelectFile={(path) => setSelectedFile(path)}
               />
             )}
+          </div>
+
+          {/* AI Refinement & Edit Prompt Panel below File Tree */}
+          <div className="thread-refinement-panel">
+            <div className="thread-panel-header">
+              <span className="panel-title">✦ Edit Files with AI</span>
+              {isRefining && <span className="refinement-status-badge">Updating files...</span>}
+            </div>
+
+            {/* Thread Message History */}
+            {messages.length > 0 && (
+              <div className="thread-messages-list custom-scrollbar">
+                {messages.map((msg) => (
+                  <div key={msg.id} className={`thread-message-item role-${msg.role}`}>
+                    <div className="msg-header">
+                      <span className="msg-role-label">
+                        {msg.role === "user" ? "You" : "BuildBuddy AI"}
+                      </span>
+                      <span className="msg-time">
+                        {new Date(msg.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                    <div className="msg-body">{msg.content}</div>
+                    {msg.files_changed && msg.files_changed.length > 0 && (
+                      <div className="msg-changed-files">
+                        <span className="changed-label">Updated: </span>
+                        {msg.files_changed.map((f) => (
+                          <span
+                            key={f}
+                            className="changed-file-pill"
+                            onClick={() => setSelectedFile(f)}
+                            title={`Click to view ${f}`}
+                          >
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+
+            {refinementError && (
+              <div className="refinement-error-banner">{refinementError}</div>
+            )}
+
+            {/* Refinement Prompt Form */}
+            <form className="thread-prompt-form" onSubmit={handleRefinementSubmit}>
+              <textarea
+                className="thread-prompt-input"
+                value={refinementPrompt}
+                onChange={(e) => setRefinementPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (refinementPrompt.trim() && !isRefining) {
+                      handleRefinementSubmit(e as any);
+                    }
+                  }
+                }}
+                placeholder="Prompt to change files or add a feature..."
+                rows={2}
+                disabled={isRefining}
+              />
+              <button
+                className="thread-send-btn"
+                type="submit"
+                disabled={isRefining || !refinementPrompt.trim()}
+                title="Submit edit prompt"
+              >
+                {isRefining ? "..." : "↑"}
+              </button>
+            </form>
           </div>
         </div>
 
@@ -261,3 +429,4 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     </div>
   );
 };
+

@@ -4,7 +4,7 @@ import pathlib
 import traceback
 from typing import Callable, Awaitable, Any, Dict, Optional
 
-from agent.graph import agent
+from agent.graph import agent, refine_project_agent
 from agent.tools import set_project_root, check_cancellation_active
 from api.models.generation import GenerationState
 
@@ -109,4 +109,43 @@ async def run_agent_generation(
         logger.error(f"Error in agent generation run {generation_id}: {error_msg}\n{traceback.format_exc()}")
         await on_event("failed", f"Generation failed: {error_msg}", {"error": error_msg})
         await on_state_change(GenerationState.FAILED, None, error_msg)
+
+
+async def run_agent_refinement(
+    generation_id: str,
+    prompt: str,
+    project_dir: pathlib.Path,
+    on_event: Callable[[str, str, Optional[Dict[str, Any]]], Awaitable[None]],
+    on_complete: Callable[[str, list[str]], Awaitable[None]],
+    on_failure: Callable[[str], Awaitable[None]],
+    is_cancelled_check: Optional[Callable[[], bool]] = None,
+) -> None:
+    """Executes refinement for an existing project workspace using refine_project_agent."""
+    set_project_root(project_dir)
+    try:
+        await on_event("refining", "Analyzing project codebase and preparing changes...", None)
+        loop = asyncio.get_running_loop()
+
+        def _do_refine():
+            set_project_root(project_dir)
+            if is_cancelled_check and is_cancelled_check():
+                raise RuntimeError("Refinement cancelled by user")
+            return refine_project_agent(user_prompt=prompt, project_dir=project_dir)
+
+        result = await loop.run_in_executor(None, _do_refine)
+        summary = result.get("summary", "Project updated.")
+        files_changed = result.get("files_changed", [])
+
+        await on_event("refinement_completed", f"Refinement complete: {summary}", {"files_changed": files_changed})
+        await on_complete(summary, files_changed)
+    except asyncio.CancelledError:
+        logger.warning(f"Refinement run {generation_id} was cancelled.")
+        await on_event("cancelled", "Refinement run was cancelled", None)
+        await on_failure("Refinement cancelled")
+    except Exception as e:
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        logger.error(f"Error in refinement run {generation_id}: {error_msg}\n{traceback.format_exc()}")
+        await on_event("failed", f"Refinement failed: {error_msg}", {"error": error_msg})
+        await on_failure(error_msg)
+
 

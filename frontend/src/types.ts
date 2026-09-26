@@ -30,6 +30,15 @@ export interface TaskPlan {
   plan?: Plan;
 }
 
+export interface ThreadMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  status?: "completed" | "refining" | "failed";
+  files_changed?: string[];
+}
+
 export interface GenerationResponse {
   id: string;
   prompt: string;
@@ -40,6 +49,7 @@ export interface GenerationResponse {
   plan?: Plan;
   task_plan?: TaskPlan;
   error?: string;
+  messages?: ThreadMessage[];
 }
 
 export interface GenerationEvent {
