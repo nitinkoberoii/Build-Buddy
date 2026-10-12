@@ -11,8 +11,11 @@ from agent.tools import *
 
 _ = load_dotenv()
 
-set_debug(True)
-set_verbose(True)
+# LangChain's stdout tracer assumes tool inputs are strings. Our tools receive
+# structured dictionary inputs, so verbose/debug tracing raises AttributeError
+# when it attempts to call `.strip()` on those dictionaries.
+set_debug(False)
+set_verbose(False)
 
 llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
 
