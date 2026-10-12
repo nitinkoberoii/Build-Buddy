@@ -15,4 +15,5 @@ node_modules/
 
 # Generated BuildBuddy projects and local API state
 generated_projects/
+storage/
 frontend/dist/
