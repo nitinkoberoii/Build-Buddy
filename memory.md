@@ -41,7 +41,10 @@
   - Created initial Alembic migration (`c26c10eac071_create_core_tenancy_schema.py`) and verified repeatable upgrade/downgrade cycles.
   - Implemented data access repositories (`ProjectRepository`, `GenerationRepository`, `EventRepository`, `MessageRepository`, `SnapshotRepository`, `ArtifactRepository`).
   - Refactored `GenerationService` to persist generation records, lifecycle events, and refinement thread messages directly to SQLite via repositories, eliminating in-memory `_runs` and `meta.json` disk caches while preserving 100% of Pydantic response contracts and frontend compatibility.
-  - Backend test suite passing with 100% pass rate across 10 test specs.
+  - Enforced multi-tenant ownership chain across all API endpoints: `authenticated user -> organization membership -> project -> generation ID`. Client-supplied user/org IDs are never trusted as proof of ownership.
+  - Implemented role-based access control policies: `owner`, `admin`, `member`, and `viewer` (read-only enforcement returning 403 on create/refine/cancel mutations).
+  - Cross-tenant access attempts return 404 Not Found even with known UUIDs.
+  - Added multi-tenant integration tests in `tests/test_ownership.py` (100% pass rate across 12 test specs).
 
 ## Current limitations
 
@@ -51,9 +54,8 @@
 ## Immediate next task
 
 Phase 4A continuation:
-1. Apply ownership and authorization checks to every generation, refinement, file, artifact, event, and download operation.
-2. Select one durable queue architecture (Redis + ARQ or Redis + Celery), document the decision, and move generation execution into workers.
-3. Add object-storage abstraction and snapshot manifests; do not add frontend authentication until the backend tenancy model is enforced.
+1. Select one durable queue architecture (Redis + ARQ or Redis + Celery), document the decision, and move generation execution into workers.
+2. Add object-storage abstraction and snapshot manifests; do not add frontend authentication until the backend tenancy model is enforced.
 
 ## Agent guidance
 

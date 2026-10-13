@@ -69,6 +69,46 @@ class GenerationRepository:
         return list(session.execute(stmt).scalars().all())
 
     @staticmethod
+    def get_generation_in_organization(
+        session: Session,
+        generation_id: uuid.UUID,
+        organization_id: uuid.UUID,
+    ) -> Optional[Generation]:
+        """Retrieves a generation ensuring it belongs to the authenticated user's organization."""
+        from api.db.models.project import Project
+        stmt = (
+            select(Generation)
+            .join(Project, Generation.project_id == Project.id)
+            .where(
+                Generation.id == generation_id,
+                Project.organization_id == organization_id,
+            )
+            .options(
+                selectinload(Generation.thread_messages),
+                selectinload(Generation.events),
+            )
+        )
+        return session.execute(stmt).scalar_one_or_none()
+
+    @staticmethod
+    def list_generations_for_organization(
+        session: Session,
+        organization_id: uuid.UUID,
+        limit: int = 100,
+    ) -> List[Generation]:
+        """Lists generations belonging to projects in the authenticated organization."""
+        from api.db.models.project import Project
+        stmt = (
+            select(Generation)
+            .join(Project, Generation.project_id == Project.id)
+            .where(Project.organization_id == organization_id)
+            .options(selectinload(Generation.thread_messages))
+            .order_by(desc(Generation.created_at))
+            .limit(limit)
+        )
+        return list(session.execute(stmt).scalars().all())
+
+    @staticmethod
     def update_generation_state(
         session: Session,
         generation_id: uuid.UUID,

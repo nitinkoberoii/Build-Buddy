@@ -111,16 +111,29 @@ class GenerationService:
         )
 
     def create_generation(
-        self, prompt: str, model: Optional[str] = None, attachments: Optional[List[Dict[str, Any]]] = None
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        organization_id: Optional[uuid.UUID] = None,
+        creator_id: Optional[uuid.UUID] = None,
     ) -> GenerationResponse:
         """Creates database rows first, then starts async background execution."""
         selected_model = model if model and model in ALLOWED_MODELS else DEFAULT_MODEL
         gen_uuid = uuid.uuid4()
         gen_id = str(gen_uuid)
 
-        # 1. Create database rows first
+        # 1. Create database rows first under the authenticated organization & project
         with self.session_factory() as session:
-            project = ProjectRepository.get_or_create_default_project(session)
+            if organization_id:
+                project = ProjectRepository.get_or_create_project_for_organization(
+                    session=session,
+                    organization_id=organization_id,
+                    creator_id=creator_id,
+                )
+            else:
+                project = ProjectRepository.get_or_create_default_project(session)
+
             gen_orm = GenerationRepository.create_generation(
                 session=session,
                 generation_id=gen_uuid,
@@ -215,9 +228,14 @@ class GenerationService:
         finally:
             self._active_tasks.pop(gen_id, None)
 
-    def refine_generation(self, generation_id: str, prompt: str) -> GenerationResponse:
+    def refine_generation(
+        self,
+        generation_id: str,
+        prompt: str,
+        organization_id: Optional[uuid.UUID] = None,
+    ) -> GenerationResponse:
         """Appends a new refinement prompt to an existing generation thread and executes edits."""
-        run = self.get_generation(generation_id)
+        run = self.get_generation(generation_id, organization_id=organization_id)
         if not run:
             raise ValueError(f"Generation run '{generation_id}' not found")
 
@@ -255,7 +273,7 @@ class GenerationService:
         )
         self._active_tasks[generation_id] = task
 
-        return self.get_generation(generation_id)  # type: ignore
+        return self.get_generation(generation_id, organization_id=organization_id)  # type: ignore
 
     async def _execute_refinement(self, gen_id: str, prompt: str, project_dir: pathlib.Path, asst_msg_id: str) -> None:
         async def on_event(stage: str, message: str, data: Optional[Dict[str, Any]] = None):
@@ -346,12 +364,22 @@ class GenerationService:
 
         return event
 
-    def get_generation(self, generation_id: str) -> Optional[GenerationResponse]:
-        """Queries the database for generation details and thread messages."""
+    def get_generation(
+        self, generation_id: str, organization_id: Optional[uuid.UUID] = None
+    ) -> Optional[GenerationResponse]:
+        """Queries the database for generation details, verifying organization ownership if provided."""
         try:
             gen_uuid = uuid.UUID(generation_id)
             with self.session_factory() as session:
-                gen_orm = GenerationRepository.get_generation(session, gen_uuid)
+                if organization_id:
+                    gen_orm = GenerationRepository.get_generation_in_organization(
+                        session=session,
+                        generation_id=gen_uuid,
+                        organization_id=organization_id,
+                    )
+                else:
+                    gen_orm = GenerationRepository.get_generation(session, gen_uuid)
+
                 if gen_orm:
                     return self._orm_to_response(gen_orm)
         except (ValueError, TypeError):
@@ -359,18 +387,30 @@ class GenerationService:
 
         return None
 
-    def list_generations(self) -> List[GenerationResponse]:
-        """Queries the database to list all generations."""
+    def list_generations(
+        self, organization_id: Optional[uuid.UUID] = None
+    ) -> List[GenerationResponse]:
+        """Queries the database to list generations, scoped to organization if provided."""
         try:
             with self.session_factory() as session:
-                gens_orm = GenerationRepository.list_generations(session)
+                if organization_id:
+                    gens_orm = GenerationRepository.list_generations_for_organization(session, organization_id)
+                else:
+                    gens_orm = GenerationRepository.list_generations(session)
                 return [self._orm_to_response(g) for g in gens_orm]
         except Exception as e:
             logger.error(f"Error querying generations from DB: {e}")
             return []
 
-    def get_events(self, generation_id: str) -> List[GenerationEvent]:
-        """Retrieves events for a generation directly from the database."""
+    def get_events(
+        self, generation_id: str, organization_id: Optional[uuid.UUID] = None
+    ) -> List[GenerationEvent]:
+        """Retrieves events for a generation directly from the database, verifying ownership."""
+        if organization_id:
+            run = self.get_generation(generation_id, organization_id=organization_id)
+            if not run:
+                return []
+
         try:
             gen_uuid = uuid.UUID(generation_id)
             with self.session_factory() as session:
@@ -381,15 +421,22 @@ class GenerationService:
 
         return []
 
-    async def subscribe_events(self, generation_id: str) -> AsyncGenerator[str, None]:
-        """Yields SSE formatted string events for a generation run."""
+    async def subscribe_events(
+        self, generation_id: str, organization_id: Optional[uuid.UUID] = None
+    ) -> AsyncGenerator[str, None]:
+        """Yields SSE formatted string events for a generation run, verifying ownership first."""
+        if organization_id:
+            run = self.get_generation(generation_id, organization_id=organization_id)
+            if not run:
+                return
+
         queue: asyncio.Queue = asyncio.Queue()
         if generation_id not in self._event_queues:
             self._event_queues[generation_id] = []
         self._event_queues[generation_id].append(queue)
 
         # Replay past events queried from the database
-        for past_event in self.get_events(generation_id):
+        for past_event in self.get_events(generation_id, organization_id=organization_id):
             yield f"event: message\ndata: {past_event.model_dump_json()}\n\n"
 
         try:
@@ -397,7 +444,7 @@ class GenerationService:
                 # Wait for new live events
                 event: GenerationEvent = await queue.get()
                 yield f"event: message\ndata: {event.model_dump_json()}\n\n"
-                run = self.get_generation(generation_id)
+                run = self.get_generation(generation_id, organization_id=organization_id)
                 if run and run.state in (
                     GenerationState.COMPLETED,
                     GenerationState.FAILED,
@@ -412,7 +459,15 @@ class GenerationService:
     def is_cancelled(self, generation_id: str) -> bool:
         return self._cancel_flags.get(generation_id, False)
 
-    def cancel_generation(self, generation_id: str) -> bool:
+    def cancel_generation(
+        self, generation_id: str, organization_id: Optional[uuid.UUID] = None
+    ) -> bool:
+        """Cancels an active generation run after verifying organization ownership."""
+        if organization_id:
+            run = self.get_generation(generation_id, organization_id=organization_id)
+            if not run:
+                return False
+
         self._cancel_flags[generation_id] = True
 
         # Write .cancelled marker file to signal immediate tool/graph abort
@@ -443,8 +498,15 @@ class GenerationService:
             return True
         return False
 
-    def get_file_tree(self, generation_id: str) -> List[FileNode]:
+    def get_file_tree(
+        self, generation_id: str, organization_id: Optional[uuid.UUID] = None
+    ) -> List[FileNode]:
         """Returns structured file/directory tree for the generation project workspace."""
+        if organization_id:
+            run = self.get_generation(generation_id, organization_id=organization_id)
+            if not run:
+                raise FileNotFoundError(f"Generation '{generation_id}' not found")
+
         project_dir = self._get_project_dir(generation_id)
         if not project_dir.exists():
             return []
@@ -476,8 +538,15 @@ class GenerationService:
 
         return build_nodes(project_dir)
 
-    def read_file_content(self, generation_id: str, relative_path: str) -> FileContentResponse:
-        """Reads file content safely from the project directory."""
+    def read_file_content(
+        self, generation_id: str, relative_path: str, organization_id: Optional[uuid.UUID] = None
+    ) -> FileContentResponse:
+        """Reads file content safely from the project directory, verifying ownership."""
+        if organization_id:
+            run = self.get_generation(generation_id, organization_id=organization_id)
+            if not run:
+                raise FileNotFoundError(f"Generation '{generation_id}' not found")
+
         project_dir = self._get_project_dir(generation_id).resolve()
         clean_rel = relative_path.lstrip("/\\")
         target_file = (project_dir / clean_rel).resolve()
@@ -497,8 +566,15 @@ class GenerationService:
             size=target_file.stat().st_size,
         )
 
-    def create_project_zip(self, generation_id: str) -> bytes:
-        """Creates an in-memory ZIP archive of all files in the project workspace."""
+    def create_project_zip(
+        self, generation_id: str, organization_id: Optional[uuid.UUID] = None
+    ) -> bytes:
+        """Creates an in-memory ZIP archive of all files in the project workspace, verifying ownership."""
+        if organization_id:
+            run = self.get_generation(generation_id, organization_id=organization_id)
+            if not run:
+                raise FileNotFoundError(f"Generation '{generation_id}' not found")
+
         project_dir = self._get_project_dir(generation_id)
         buffer = io.BytesIO()
 

@@ -46,6 +46,30 @@ class ProjectRepository:
         return project
 
     @staticmethod
+    def get_or_create_project_for_organization(
+        session: Session,
+        organization_id: uuid.UUID,
+        name: str = "Workspace Project",
+        creator_id: Optional[uuid.UUID] = None,
+    ) -> Project:
+        """Finds or creates a project under a given tenant organization."""
+        stmt = select(Project).where(
+            Project.organization_id == organization_id,
+            Project.name == name,
+        )
+        project = session.execute(stmt).scalar_one_or_none()
+        if not project:
+            project = Project(
+                id=uuid.uuid4(),
+                organization_id=organization_id,
+                name=name,
+                creator_id=creator_id,
+            )
+            session.add(project)
+            session.flush()
+        return project
+
+    @staticmethod
     def get_project(session: Session, project_id: uuid.UUID) -> Optional[Project]:
         """Retrieves a project by primary key."""
         stmt = select(Project).where(Project.id == project_id)
