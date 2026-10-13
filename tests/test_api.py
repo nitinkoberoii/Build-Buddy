@@ -126,3 +126,27 @@ def test_cancel_generation_endpoint(tmp_path):
     assert status_res.status_code == 200
     assert status_res.json()["state"] == "cancelled"
 
+
+def test_list_and_refine_generation_endpoints(tmp_path):
+    generation_service.storage_dir = tmp_path
+    create_res = client.post("/api/generations", json={"prompt": "Test app for list and refine"})
+    assert create_res.status_code == 201
+    gen_id = create_res.json()["id"]
+
+    # Test list generations
+    list_res = client.get("/api/generations")
+    assert list_res.status_code == 200
+    all_runs = list_res.json()
+    assert any(run["id"] == gen_id for run in all_runs)
+
+    # Test refine generation
+    with patch("api.services.generation_service.run_agent_refinement", new_callable=AsyncMock):
+        refine_res = client.post(
+            f"/api/generations/{gen_id}/refine",
+            json={"prompt": "Add a dark mode toggle button"},
+        )
+        assert refine_res.status_code == 200
+        refine_data = refine_res.json()
+        assert len(refine_data["messages"]) >= 3  # initial user, initial assistant, new user, new assistant
+        assert any(m["content"] == "Add a dark mode toggle button" for m in refine_data["messages"])
+

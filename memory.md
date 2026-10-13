@@ -34,23 +34,26 @@
   - Implemented Thread-Based AI Workspace Refinement Engine (`POST /api/generations/{id}/refine` & `refine_project_agent`) for incremental file edits and file creation directly in workspace.
   - Added AI Edit Prompt Panel, scrollable chat message feed, non-overlapping flexbox layout constraints, and message action toolbars (`📋 Copy`, `🔄 Regenerate`, `✏️ Edit`) in `ProjectWorkspace.tsx`.
   - Implemented Persistent URL Routing (`#/project/{id}`) and back/forward browser navigation support.
-- Project architecture, design, PRD, phase, memory, and rule documents updated and synchronized.
-
+- Phase 4A Database & Persistence Foundation:
+  - Added SQLAlchemy 2.x, Alembic, and Psycopg binary dependencies to pyproject.toml.
+  - Configured database foundation in `api/db/` (`base.py`, `session.py`, `models/`, `repositories/`) and `DATABASE_URL` in `api/config.py`.
+  - Defined full tenancy ORM schema across 11 tables (`users`, `organizations`, `memberships`, `projects`, `generations`, `generation_events`, `thread_messages`, `project_snapshots`, `artifacts`, `attachments`, `audit_logs`).
+  - Created initial Alembic migration (`c26c10eac071_create_core_tenancy_schema.py`) and verified repeatable upgrade/downgrade cycles.
+  - Implemented data access repositories (`ProjectRepository`, `GenerationRepository`, `EventRepository`, `MessageRepository`, `SnapshotRepository`, `ArtifactRepository`).
+  - Refactored `GenerationService` to persist generation records, lifecycle events, and refinement thread messages directly to SQLite via repositories, eliminating in-memory `_runs` and `meta.json` disk caches while preserving 100% of Pydantic response contracts and frontend compatibility.
+  - Backend test suite passing with 100% pass rate across 10 test specs.
 
 ## Current limitations
 
-- In-memory event stream queues and run storage; need persistent SQLite/PostgreSQL database storage for multi-instance production scale (Phase 4).
 - LangChain debug logging enabled in `agent/graph.py` which can be noisy for production.
+- Background jobs run in local asyncio tasks rather than durable worker queues (Redis + ARQ).
 
 ## Immediate next task
 
-Phase 4A — core platform foundation. Start with the data/ownership boundary before deploying a queue or login screen:
-
-1. Define SQLAlchemy models and Alembic migrations for organizations, memberships, projects, generations, events, snapshots, artifacts, and audit logs.
-2. Replace JSON/in-memory run metadata with repository-backed persistence while preserving existing API contracts.
-3. Apply ownership checks to every generation, refinement, file, artifact, event, and download operation.
-4. Select one durable queue architecture (Redis + ARQ or Redis + Celery), document the decision, and move generation execution into workers.
-5. Add object-storage abstraction and snapshot manifests; do not add frontend authentication until the backend tenancy model is enforced.
+Phase 4A continuation:
+1. Apply ownership and authorization checks to every generation, refinement, file, artifact, event, and download operation.
+2. Select one durable queue architecture (Redis + ARQ or Redis + Celery), document the decision, and move generation execution into workers.
+3. Add object-storage abstraction and snapshot manifests; do not add frontend authentication until the backend tenancy model is enforced.
 
 ## Agent guidance
 

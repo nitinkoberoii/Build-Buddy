@@ -1,6 +1,5 @@
 import asyncio
 import io
-import json
 import logging
 import pathlib
 import datetime
@@ -9,6 +8,17 @@ import zipfile
 from typing import Dict, List, Optional, Any, AsyncGenerator
 
 from api.config import STORAGE_DIR, DEFAULT_MODEL, ALLOWED_MODELS
+from api.db.base import Base
+from api.db.session import SessionLocal
+from api.db.models.generation import Generation as GenerationModel, GenerationEvent as GenerationEventModel
+from api.db.repositories import (
+    ProjectRepository,
+    GenerationRepository,
+    EventRepository,
+    MessageRepository,
+    ArtifactRepository,
+    SnapshotRepository,
+)
 from api.models.generation import (
     GenerationResponse,
     GenerationState,
@@ -21,30 +31,26 @@ from api.services.runner import run_agent_generation, run_agent_refinement
 
 logger = logging.getLogger(__name__)
 
+
 class GenerationService:
-    def __init__(self, storage_dir: pathlib.Path = STORAGE_DIR):
+    """Service layer managing generation lifecycle, backed by SQLite/PostgreSQL repositories."""
+
+    def __init__(self, storage_dir: pathlib.Path = STORAGE_DIR, session_factory=None):
         self.storage_dir = storage_dir
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        self._runs: Dict[str, GenerationResponse] = {}
-        self._events: Dict[str, List[GenerationEvent]] = {}
+        self.session_factory = session_factory or SessionLocal
+
+        # Ensure database tables exist in the target database
+        try:
+            with self.session_factory() as session:
+                Base.metadata.create_all(bind=session.get_bind())
+        except Exception as e:
+            logger.debug(f"Table verification check: {e}")
+
+        # In-memory runtime queues and tracking for active execution and SSE streams
         self._event_queues: Dict[str, List[asyncio.Queue]] = {}
         self._active_tasks: Dict[str, asyncio.Task] = {}
         self._cancel_flags: Dict[str, bool] = {}
-        self._load_existing_runs()
-
-    def _load_existing_runs(self) -> None:
-        """Loads saved generation metadata from disk on startup."""
-        for item in self.storage_dir.iterdir():
-            if item.is_dir():
-                meta_file = item / "meta.json"
-                if meta_file.exists():
-                    try:
-                        with open(meta_file, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        resp = GenerationResponse(**data)
-                        self._runs[resp.id] = resp
-                    except Exception as e:
-                        logger.error(f"Failed to load run metadata for {item.name}: {e}")
 
     def _get_run_dir(self, generation_id: str) -> pathlib.Path:
         d = self.storage_dir / generation_id
@@ -56,60 +62,108 @@ class GenerationService:
         p.mkdir(parents=True, exist_ok=True)
         return p
 
-    def _save_run_meta(self, run: GenerationResponse) -> None:
-        run_dir = self._get_run_dir(run.id)
-        meta_file = run_dir / "meta.json"
-        with open(meta_file, "w", encoding="utf-8") as f:
-            json.dump(run.model_dump(), f, indent=2)
+    def _orm_to_response(self, gen: GenerationModel) -> GenerationResponse:
+        """Maps an ORM Generation entity and its related thread messages to a Pydantic GenerationResponse."""
+        messages: List[ThreadMessage] = []
+        if gen.thread_messages:
+            for m in gen.thread_messages:
+                messages.append(
+                    ThreadMessage(
+                        id=str(m.id),
+                        role=m.role,
+                        content=m.content,
+                        timestamp=m.timestamp.isoformat() if m.timestamp else datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        status=m.status,
+                        files_changed=m.changed_files if isinstance(m.changed_files, list) else None,
+                    )
+                )
 
-    def _save_events(self, generation_id: str) -> None:
-        run_dir = self._get_run_dir(generation_id)
-        events_file = run_dir / "events.json"
-        events_list = [e.model_dump() for e in self._events.get(generation_id, [])]
-        with open(events_file, "w", encoding="utf-8") as f:
-            json.dump(events_list, f, indent=2)
+        state_enum = GenerationState.QUEUED
+        if gen.state in GenerationState._value2member_map_:
+            state_enum = GenerationState(gen.state)
+
+        created_str = gen.created_at.isoformat() if gen.created_at else datetime.datetime.now(datetime.timezone.utc).isoformat()
+        updated_str = gen.updated_at.isoformat() if gen.updated_at else datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        return GenerationResponse(
+            id=str(gen.id),
+            prompt=gen.prompt,
+            model=gen.selected_model,
+            state=state_enum,
+            created_at=created_str,
+            updated_at=updated_str,
+            plan=gen.plan if isinstance(gen.plan, dict) else None,
+            task_plan=gen.task_plan if isinstance(gen.task_plan, dict) else None,
+            error=gen.error,
+            messages=messages,
+        )
+
+    def _orm_to_event(self, event: GenerationEventModel) -> GenerationEvent:
+        """Maps an ORM GenerationEvent entity to a Pydantic GenerationEvent schema."""
+        ts_str = event.timestamp.isoformat() if event.timestamp else datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return GenerationEvent(
+            id=str(event.id),
+            generation_id=str(event.generation_id),
+            stage=event.stage,
+            message=event.message,
+            timestamp=ts_str,
+            data=event.structured_data if isinstance(event.structured_data, dict) else None,
+        )
 
     def create_generation(
         self, prompt: str, model: Optional[str] = None, attachments: Optional[List[Dict[str, Any]]] = None
     ) -> GenerationResponse:
-        """Creates a new generation run record and starts async execution."""
+        """Creates database rows first, then starts async background execution."""
         selected_model = model if model and model in ALLOWED_MODELS else DEFAULT_MODEL
-        gen_id = str(uuid.uuid4())
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        gen_uuid = uuid.uuid4()
+        gen_id = str(gen_uuid)
 
-        initial_user_msg = ThreadMessage(
-            id=str(uuid.uuid4()),
-            role="user",
-            content=prompt,
-            timestamp=now,
-        )
+        # 1. Create database rows first
+        with self.session_factory() as session:
+            project = ProjectRepository.get_or_create_default_project(session)
+            gen_orm = GenerationRepository.create_generation(
+                session=session,
+                generation_id=gen_uuid,
+                project_id=project.id,
+                prompt=prompt,
+                selected_model=selected_model,
+                state="queued",
+            )
+            initial_msg_id = uuid.uuid4()
+            MessageRepository.create_message(
+                session=session,
+                generation_id=gen_uuid,
+                role="user",
+                content=prompt,
+                message_id=initial_msg_id,
+            )
 
-        run = GenerationResponse(
-            id=gen_id,
-            prompt=prompt,
-            model=selected_model,
-            state=GenerationState.QUEUED,
-            created_at=now,
-            updated_at=now,
-            messages=[initial_user_msg],
-        )
+            if attachments:
+                for att in attachments:
+                    fname = att.get("filename") or att.get("name") or "attachment"
+                    ArtifactRepository.create_attachment(
+                        session=session,
+                        generation_id=gen_uuid,
+                        original_filename=fname,
+                        file_metadata=att,
+                    )
 
-        self._runs[gen_id] = run
-        self._events[gen_id] = []
+            session.commit()
+            response = self._orm_to_response(gen_orm)
+
         self._event_queues[gen_id] = []
-        self._save_run_meta(run)
 
-        # Record initial event
+        # 2. Record initial event (persists to generation_events table and notifies active SSE)
         self.record_event(gen_id, "queued", f"Generation request queued for model {selected_model}")
 
-        # Start async background agent execution
+        # 3. Start async background agent execution
         project_dir = self._get_project_dir(gen_id)
         task = asyncio.create_task(
             self._execute_run(gen_id, prompt, project_dir)
         )
         self._active_tasks[gen_id] = task
 
-        return run
+        return response
 
     async def _execute_run(self, gen_id: str, prompt: str, project_dir: pathlib.Path) -> None:
         async def on_event(stage: str, message: str, data: Optional[Dict[str, Any]] = None):
@@ -120,32 +174,34 @@ class GenerationService:
             partial_data: Optional[Dict[str, Any]] = None,
             error: Optional[str] = None,
         ):
-            run = self._runs.get(gen_id)
-            if not run:
-                return
-            run.state = state
-            run.updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            if partial_data:
-                if "plan" in partial_data:
-                    run.plan = partial_data["plan"]
-                if "task_plan" in partial_data:
-                    run.task_plan = partial_data["task_plan"]
-            if error:
-                run.error = error
+            plan_data = partial_data.get("plan") if partial_data else None
+            task_plan_data = partial_data.get("task_plan") if partial_data else None
 
-            if state == GenerationState.COMPLETED:
-                if not any(m.role == "assistant" for m in run.messages):
-                    run.messages.append(
-                        ThreadMessage(
-                            id=str(uuid.uuid4()),
-                            role="assistant",
-                            content="Initial project workspace generated successfully.",
-                            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                            status="completed",
-                        )
+            # Persist state transition to database
+            try:
+                gen_uuid = uuid.UUID(gen_id)
+                with self.session_factory() as session:
+                    GenerationRepository.update_generation_state(
+                        session=session,
+                        generation_id=gen_uuid,
+                        state=state.value,
+                        plan=plan_data,
+                        task_plan=task_plan_data,
+                        error=error,
                     )
-
-            self._save_run_meta(run)
+                    if state == GenerationState.COMPLETED:
+                        existing_msgs = MessageRepository.get_messages(session, gen_uuid)
+                        if not any(m.role == "assistant" for m in existing_msgs):
+                            MessageRepository.create_message(
+                                session=session,
+                                generation_id=gen_uuid,
+                                role="assistant",
+                                content="Initial project workspace generated successfully.",
+                                status="completed",
+                            )
+                    session.commit()
+            except Exception as e:
+                logger.error(f"Error updating generation state in DB for {gen_id}: {e}")
 
         try:
             await run_agent_generation(
@@ -168,63 +224,74 @@ class GenerationService:
         if generation_id in self._active_tasks:
             raise ValueError("A task is already actively executing for this generation thread. Please wait until it completes.")
 
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        gen_uuid = uuid.UUID(generation_id)
+        user_msg_id = uuid.uuid4()
+        asst_msg_id = uuid.uuid4()
 
-        user_msg = ThreadMessage(
-            id=str(uuid.uuid4()),
-            role="user",
-            content=prompt,
-            timestamp=now,
-        )
-        asst_msg_id = str(uuid.uuid4())
-        asst_msg = ThreadMessage(
-            id=asst_msg_id,
-            role="assistant",
-            content="Refining codebase...",
-            timestamp=now,
-            status="refining",
-        )
-        run.messages.extend([user_msg, asst_msg])
-        run.updated_at = now
-        self._save_run_meta(run)
+        # Refinement messages persisted to thread_messages table
+        with self.session_factory() as session:
+            MessageRepository.create_message(
+                session=session,
+                generation_id=gen_uuid,
+                role="user",
+                content=prompt,
+                message_id=user_msg_id,
+            )
+            MessageRepository.create_message(
+                session=session,
+                generation_id=gen_uuid,
+                role="assistant",
+                content="Refining codebase...",
+                status="refining",
+                message_id=asst_msg_id,
+            )
+            session.commit()
 
         self.record_event(generation_id, "refinement_queued", f"Refinement prompt submitted: {prompt[:60]}...")
 
         project_dir = self._get_project_dir(generation_id)
         task = asyncio.create_task(
-            self._execute_refinement(generation_id, prompt, project_dir, asst_msg_id)
+            self._execute_refinement(generation_id, prompt, project_dir, str(asst_msg_id))
         )
         self._active_tasks[generation_id] = task
 
-        return run
+        return self.get_generation(generation_id)  # type: ignore
 
     async def _execute_refinement(self, gen_id: str, prompt: str, project_dir: pathlib.Path, asst_msg_id: str) -> None:
         async def on_event(stage: str, message: str, data: Optional[Dict[str, Any]] = None):
             self.record_event(gen_id, stage, message, data)
 
         async def on_complete(summary: str, files_changed: List[str]):
-            run = self._runs.get(gen_id)
-            if run:
-                for msg in run.messages:
-                    if msg.id == asst_msg_id:
-                        msg.content = summary
-                        msg.status = "completed"
-                        msg.files_changed = files_changed
-                        break
-                run.state = GenerationState.COMPLETED
-                run.updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                self._save_run_meta(run)
+            try:
+                with self.session_factory() as session:
+                    MessageRepository.update_message(
+                        session=session,
+                        message_id=uuid.UUID(asst_msg_id),
+                        content=summary,
+                        status="completed",
+                        changed_files=files_changed,
+                    )
+                    GenerationRepository.update_generation_state(
+                        session=session,
+                        generation_id=uuid.UUID(gen_id),
+                        state=GenerationState.COMPLETED.value,
+                    )
+                    session.commit()
+            except Exception as e:
+                logger.error(f"Error persisting refinement completion to DB: {e}")
 
         async def on_failure(error_msg: str):
-            run = self._runs.get(gen_id)
-            if run:
-                for msg in run.messages:
-                    if msg.id == asst_msg_id:
-                        msg.content = f"Failed to apply edits: {error_msg}"
-                        msg.status = "failed"
-                        break
-                run.updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                self._save_run_meta(run)
+            try:
+                with self.session_factory() as session:
+                    MessageRepository.update_message(
+                        session=session,
+                        message_id=uuid.UUID(asst_msg_id),
+                        content=f"Failed to apply edits: {error_msg}",
+                        status="failed",
+                    )
+                    session.commit()
+            except Exception as e:
+                logger.error(f"Error persisting refinement failure to DB: {e}")
 
         try:
             await run_agent_refinement(
@@ -242,23 +309,35 @@ class GenerationService:
     def record_event(
         self, generation_id: str, stage: str, message: str, data: Optional[Dict[str, Any]] = None
     ) -> GenerationEvent:
-        """Records a timestamped event and broadcasts it to active SSE subscribers."""
-        event_id = str(uuid.uuid4())
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        """Commits every event to generation_events table, then broadcasts to active SSE queues."""
+        event_uuid = uuid.uuid4()
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        now_str = now_dt.isoformat()
+
+        # Commit to generation_events table
+        try:
+            gen_uuid = uuid.UUID(generation_id)
+            with self.session_factory() as session:
+                EventRepository.create_event(
+                    session=session,
+                    generation_id=gen_uuid,
+                    stage=stage,
+                    message=message,
+                    structured_data=data,
+                    event_id=event_uuid,
+                )
+                session.commit()
+        except Exception as e:
+            logger.warning(f"Could not persist event {stage} to DB for {generation_id}: {e}")
 
         event = GenerationEvent(
-            id=event_id,
+            id=str(event_uuid),
             generation_id=generation_id,
             stage=stage,
             message=message,
-            timestamp=now,
+            timestamp=now_str,
             data=data,
         )
-
-        if generation_id not in self._events:
-            self._events[generation_id] = []
-        self._events[generation_id].append(event)
-        self._save_events(generation_id)
 
         # Broadcast to active SSE queues
         queues = self._event_queues.get(generation_id, [])
@@ -268,13 +347,39 @@ class GenerationService:
         return event
 
     def get_generation(self, generation_id: str) -> Optional[GenerationResponse]:
-        return self._runs.get(generation_id)
+        """Queries the database for generation details and thread messages."""
+        try:
+            gen_uuid = uuid.UUID(generation_id)
+            with self.session_factory() as session:
+                gen_orm = GenerationRepository.get_generation(session, gen_uuid)
+                if gen_orm:
+                    return self._orm_to_response(gen_orm)
+        except (ValueError, TypeError):
+            pass
+
+        return None
 
     def list_generations(self) -> List[GenerationResponse]:
-        return list(self._runs.values())
+        """Queries the database to list all generations."""
+        try:
+            with self.session_factory() as session:
+                gens_orm = GenerationRepository.list_generations(session)
+                return [self._orm_to_response(g) for g in gens_orm]
+        except Exception as e:
+            logger.error(f"Error querying generations from DB: {e}")
+            return []
 
     def get_events(self, generation_id: str) -> List[GenerationEvent]:
-        return self._events.get(generation_id, [])
+        """Retrieves events for a generation directly from the database."""
+        try:
+            gen_uuid = uuid.UUID(generation_id)
+            with self.session_factory() as session:
+                events_orm = EventRepository.get_events(session, gen_uuid)
+                return [self._orm_to_event(e) for e in events_orm]
+        except (ValueError, TypeError):
+            pass
+
+        return []
 
     async def subscribe_events(self, generation_id: str) -> AsyncGenerator[str, None]:
         """Yields SSE formatted string events for a generation run."""
@@ -283,13 +388,13 @@ class GenerationService:
             self._event_queues[generation_id] = []
         self._event_queues[generation_id].append(queue)
 
-        # Replay past events first
+        # Replay past events queried from the database
         for past_event in self.get_events(generation_id):
             yield f"event: message\ndata: {past_event.model_dump_json()}\n\n"
 
         try:
             while True:
-                # Wait for new events
+                # Wait for new live events
                 event: GenerationEvent = await queue.get()
                 yield f"event: message\ndata: {event.model_dump_json()}\n\n"
                 run = self.get_generation(generation_id)
@@ -317,16 +422,20 @@ class GenerationService:
         except Exception as e:
             logger.warning(f"Could not create .cancelled marker file for {generation_id}: {e}")
 
-        run = self._runs.get(generation_id)
-        if run and run.state not in (
-            GenerationState.COMPLETED,
-            GenerationState.FAILED,
-            GenerationState.CANCELLED,
-        ):
-            run.state = GenerationState.CANCELLED
-            run.updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            self._save_run_meta(run)
-            self.record_event(generation_id, "cancelled", "Generation run was cancelled by user")
+        # Update database state to cancelled
+        try:
+            gen_uuid = uuid.UUID(generation_id)
+            with self.session_factory() as session:
+                GenerationRepository.update_generation_state(
+                    session=session,
+                    generation_id=gen_uuid,
+                    state=GenerationState.CANCELLED.value,
+                )
+                session.commit()
+        except Exception as e:
+            logger.error(f"Error persisting cancelled state to DB for {generation_id}: {e}")
+
+        self.record_event(generation_id, "cancelled", "Generation run was cancelled by user")
 
         task = self._active_tasks.get(generation_id)
         if task and not task.done():
@@ -401,6 +510,7 @@ class GenerationService:
 
         buffer.seek(0)
         return buffer.getvalue()
+
 
 # Global singleton service instance
 generation_service = GenerationService()
