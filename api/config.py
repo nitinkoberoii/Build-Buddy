@@ -32,3 +32,7 @@ CORS_ORIGINS: List[str] = [
 
 PROJECT_NAME = "BuildBuddy API"
 API_VERSION = "v1"
+
+# Database configuration
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./storage/buildbuddy.db")
+DATABASE_URL_TEST = os.getenv("DATABASE_URL_TEST", "sqlite:///:memory:")

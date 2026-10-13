@@ -55,3 +55,4 @@ Phase 4A — core platform foundation. Start with the data/ownership boundary be
 ## Agent guidance
 
 Read `rules.md`, `architecture.md`, and the relevant `design.md` section before work. Never expose provider keys or raw server paths. Update this file when milestones, limitations, or next work change.
+Always proceed step by step. If a prerequisite or setup step is needed before implementation (e.g. package installations, environment variables, external services), break at that exact point of implementation without skipping it, provide the exact steps to the user, and wait for confirmation before writing implementation code.
