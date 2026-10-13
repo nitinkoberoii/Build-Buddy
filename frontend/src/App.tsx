@@ -333,7 +333,7 @@ export default function App() {
 
                 <div className="prompt-actions">
                   <button
-                    className="prompt-pill"
+                    className="prompt-pill prompt-pill-type"
                     type="button"
                     aria-label="Project type: Web app"
                   >
