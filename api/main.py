@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import PROJECT_NAME, API_VERSION, CORS_ORIGINS
-from api.routers import health, generations
+from api.routers import health, generations, auth
 
 app = FastAPI(
     title=PROJECT_NAME,
@@ -23,6 +23,7 @@ app.add_middleware(
 
 # Attach routers under /api prefix and root
 app.include_router(health.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 app.include_router(generations.router, prefix="/api")
 
 @app.get("/")

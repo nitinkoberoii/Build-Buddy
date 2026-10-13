@@ -45,6 +45,15 @@
   - Implemented role-based access control policies: `owner`, `admin`, `member`, and `viewer` (read-only enforcement returning 403 on create/refine/cancel mutations).
   - Cross-tenant access attempts return 404 Not Found even with known UUIDs.
   - Added multi-tenant integration tests in `tests/test_ownership.py` (100% pass rate across 12 test specs).
+- Phase 4A Step 6 (Backend Authentication Engine):
+  - Added dependencies: `argon2-cffi`, `pyjwt`, `resend`.
+  - Added auth database models (`UserSession`, `EmailVerificationToken`, `PasswordResetToken`) in `api/db/models/auth.py` and created Alembic migration `0df248cad326_add_auth_and_session_tables.py`.
+  - Implemented OWASP-compliant Argon2id password hashing and JWT access token handling in `api/services/security.py`.
+  - Implemented transactional email delivery via Resend with graceful console logging fallback in `api/services/email_service.py`.
+  - Implemented rotating HTTP-only session cookies with SHA-256 hashed database storage and immediate revocation in `api/db/repositories/auth_repository.py`.
+  - Implemented double-submit CSRF cookie protection (`csrf_token` cookie + `X-CSRF-Token` header) for mutating requests.
+  - Created authentication router (`/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/verify-email`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/me`).
+  - Added automated test suite in `tests/test_auth.py` (18/18 tests passing across test suite).
 
 ## Current limitations
 

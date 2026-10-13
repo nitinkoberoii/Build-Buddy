@@ -36,3 +36,15 @@ API_VERSION = "v1"
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./storage/buildbuddy.db")
 DATABASE_URL_TEST = os.getenv("DATABASE_URL_TEST", "sqlite:///:memory:")
+
+# Authentication & Security
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "buildbuddy-dev-secret-key-32chars-min-len!")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+CSRF_SECRET_KEY = os.getenv("CSRF_SECRET_KEY", "buildbuddy-dev-csrf-secret-key")
+
+# Email & Frontend URLs
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")

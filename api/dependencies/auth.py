@@ -1,16 +1,22 @@
 """Authentication and tenancy context dependency for FastAPI."""
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
-from fastapi import Depends, HTTPException, Header, status
+from fastapi import Depends, HTTPException, Header, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.db.session import get_db
 from api.db.models.user import User
 from api.db.models.organization import Organization, Membership
-from api.db.models.project import Project
+from api.db.models.auth import UserSession
+from api.db.repositories.auth_repository import AuthRepository
+from api.services.security import (
+    decode_access_token,
+    hash_token,
+    verify_csrf_token,
+)
 
 
 class Role(str, Enum):
@@ -94,48 +100,84 @@ def get_or_create_default_auth(db: Session) -> AuthContext:
 
 
 def get_current_auth(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     x_user_email: Optional[str] = Header(None, alias="X-User-Email"),
+    x_csrf_token: Optional[str] = Header(None, alias="X-CSRF-Token"),
     db: Session = Depends(get_db),
 ) -> AuthContext:
-    """Resolves authenticated user and tenant organization from headers or default context.
+    """Resolves authenticated user and tenant organization from JWT, cookie sessions, or dev context.
     
-    Security: Never trusts client-supplied user_id or organization_id in request payloads.
+    Security: Never trusts client-supplied user_id or organization_id in request bodies.
     """
-    email_to_lookup: Optional[str] = None
+    # 1. Bearer Token resolution (JWT or test email)
+    if authorization and authorization.startswith("Bearer "):
+        raw_token = authorization.replace("Bearer ", "").strip()
+        if "@" in raw_token:
+            # Test helper: Bearer email
+            user = AuthRepository.get_user_by_email(db, raw_token)
+            if not user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid test token email")
+            primary = AuthRepository.get_user_primary_membership(db, user.id)
+            if not primary:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User has no organization membership")
+            return AuthContext(user=user, organization=primary[0], membership=primary[1])
 
+        try:
+            payload = decode_access_token(raw_token)
+            user_id = uuid.UUID(payload["sub"])
+            org_id = uuid.UUID(payload["org_id"])
+            user = AuthRepository.get_user_by_id(db, user_id)
+            if not user or user.status != "active":
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User inactive or not found")
+
+            # Verify membership in token org
+            stmt_mem = select(Membership).where(
+                Membership.user_id == user_id,
+                Membership.organization_id == org_id,
+            )
+            membership = db.execute(stmt_mem).scalar_one_or_none()
+            if not membership:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Revoked or invalid organization membership")
+
+            stmt_org = select(Organization).where(Organization.id == org_id)
+            org = db.execute(stmt_org).scalar_one()
+
+            return AuthContext(user=user, organization=org, membership=membership)
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid or expired access token: {e}")
+
+    # 2. X-User-Email Header (for deterministic tests)
     if x_user_email:
-        email_to_lookup = x_user_email.strip()
-    elif authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "").strip()
-        # Allows Bearer email or Bearer user token
-        if "@" in token:
-            email_to_lookup = token
-
-    if email_to_lookup:
-        stmt = select(User).where(User.email == email_to_lookup)
-        user = db.execute(stmt).scalar_one_or_none()
+        user = AuthRepository.get_user_by_email(db, x_user_email)
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"User '{email_to_lookup}' not found or invalid credentials",
-            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"User '{x_user_email}' not found")
+        primary = AuthRepository.get_user_primary_membership(db, user.id)
+        if not primary:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User has no organization membership")
+        return AuthContext(user=user, organization=primary[0], membership=primary[1])
 
-        # Lookup organization membership for this user
-        stmt_mem = select(Membership).where(Membership.user_id == user.id)
-        membership = db.execute(stmt_mem).scalar_one_or_none()
-        if not membership:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User has no organization membership",
-            )
+    # 3. HTTP-Only Cookie Session Resolution
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        # Enforce CSRF protection on mutating cookie-authenticated endpoints
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            cookie_csrf = request.cookies.get("csrf_token")
+            if not verify_csrf_token(cookie_csrf, x_csrf_token):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="CSRF validation failed: missing or mismatched X-CSRF-Token",
+                )
 
-        stmt_org = select(Organization).where(Organization.id == membership.organization_id)
-        org = db.execute(stmt_org).scalar_one()
+        session_record = AuthRepository.get_valid_session(db, hash_token(refresh_token))
+        if session_record:
+            user = AuthRepository.get_user_by_id(db, session_record.user_id)
+            if user and user.status == "active":
+                primary = AuthRepository.get_user_primary_membership(db, user.id)
+                if primary:
+                    return AuthContext(user=user, organization=primary[0], membership=primary[1])
 
-        return AuthContext(user=user, organization=org, membership=membership)
-
-    # Fallback to default auth context for local dev web UI before login screen
+    # 4. Fallback to default auth context for local dev browser UI before login screen
     return get_or_create_default_auth(db)
 
 

@@ -11,6 +11,7 @@ from api.db.models.generation import Generation, GenerationEvent, ThreadMessage
 from api.db.models.snapshot import ProjectSnapshot
 from api.db.models.artifact import Artifact, Attachment
 from api.db.models.audit import AuditLog
+from api.db.models.auth import UserSession, EmailVerificationToken, PasswordResetToken
 
 __all__ = [
     "Base",
@@ -25,4 +26,7 @@ __all__ = [
     "Artifact",
     "Attachment",
     "AuditLog",
+    "UserSession",
+    "EmailVerificationToken",
+    "PasswordResetToken",
 ]
