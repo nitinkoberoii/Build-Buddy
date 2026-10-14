@@ -74,3 +74,36 @@ export interface FileContentResponse {
   content: string;
   size: number;
 }
+
+export interface User {
+  id: string;
+  email: string;
+  verified: boolean;
+  status: string;
+  created_at: string;
+  name?: string;
+  role_desc?: string;
+  build_intent?: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: User;
+  organization: Organization;
+  role: string;
+  csrf_token: string;
+}
+
+export interface AuthUserDetails {
+  name?: string;
+  role?: string;
+  buildIntent?: string;
+}

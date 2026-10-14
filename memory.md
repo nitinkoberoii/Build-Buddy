@@ -54,6 +54,15 @@
   - Implemented double-submit CSRF cookie protection (`csrf_token` cookie + `X-CSRF-Token` header) for mutating requests.
   - Created authentication router (`/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/verify-email`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/me`).
   - Added automated test suite in `tests/test_auth.py` (18/18 tests passing across test suite).
+- Phase 4A Step 7 (Frontend Authentication UI):
+  - Created Lovable-inspired dual-column split authentication modal (`AuthModal.tsx`) matching BuildBuddy's dark cosmic theme.
+  - Implemented right showcase panel utilizing `frontend/assets/review_bg.png` with a central floating prompt pill (`Ask BuildBuddy to build...`) and dynamic typing animation.
+  - Replaced the plaintext sign-in link with 2 dedicated solid navbar buttons ("Sign in" and "Sign up") without gradient colors.
+  - Added placeholders for Google, GitHub, and Apple with non-disruptive floating notification toasts.
+  - Implemented 2-step onboarding during registration: Step 1 collects email and password, Step 2 collects user profile details (full name, role chips, and project build intent chips).
+  - Built React `AuthContext.tsx` providing user state, organization tenant, session tokens, and account profile dropdown menu.
+  - Refined modal architecture: close button placed on outer frame, static prompt prefix with animated suffix, floating notice pill, and clean logo without outer square container.
+  - Verified UI responsiveness, modal dismissals, and TypeScript compilation (`npm run build` exit code 0).
 
 ## Current limitations
 

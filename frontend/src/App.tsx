@@ -8,6 +8,8 @@ import { GenerationResponse, GenerationEvent } from "./types";
 import { createGeneration, getGeneration, subscribeToEvents, cancelGeneration } from "./api";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
+import { useAuth } from "./context/AuthContext";
+import { AuthModal } from "./components/AuthModal";
 
 const reviews = [
   {
@@ -52,6 +54,17 @@ const modelOptions = [
 import { SnackbarToast } from "./components/SnackbarToast";
 
 export default function App() {
+  const {
+    user,
+    organization,
+    userDetails,
+    isAuthenticated,
+    userInitials,
+    openAuthModal,
+    logout,
+  } = useAuth();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(modelOptions[0].value);
   const [attachment, setAttachment] = useState<string | null>(null);
@@ -260,7 +273,62 @@ export default function App() {
         <a className="brand" href="/" onClick={(e) => { e.preventDefault(); handleNewProject(); }}>
           <Mark /> <span className="brand-name">BuildBuddy</span>
         </a>
-        <a className="sign-in" href="#prompt">Sign in</a>
+
+        {isAuthenticated ? (
+          <div className="nav-user-container">
+            <div
+              className="nav-user-badge"
+              onClick={() => setUserMenuOpen((prev) => !prev)}
+              title="Account Menu"
+            >
+              <div className="user-profile-avatar-small">{userInitials}</div>
+              <span className="user-email-text">{userDetails?.name || user?.email}</span>
+              <span className="user-menu-caret">{userMenuOpen ? "▴" : "▾"}</span>
+            </div>
+
+            {userMenuOpen && (
+              <div className="user-dropdown-menu">
+                <div className="dropdown-header">
+                  <div className="dropdown-user-name">
+                    {userDetails?.name || "Workspace Member"}
+                  </div>
+                  <div className="dropdown-user-email">{user?.email}</div>
+                  {organization && (
+                    <div className="dropdown-org-badge">🏢 {organization.name}</div>
+                  )}
+                </div>
+                <div className="dropdown-divider" />
+                <button
+                  type="button"
+                  className="dropdown-item logout-item"
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    logout();
+                  }}
+                >
+                  🚪 Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="nav-auth-buttons">
+            <button
+              type="button"
+              className="nav-btn-auth nav-btn-signin"
+              onClick={() => openAuthModal("login")}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className="nav-btn-auth nav-btn-signup"
+              onClick={() => openAuthModal("signup")}
+            >
+              Sign up
+            </button>
+          </div>
+        )}
       </nav>
     );
   }
@@ -273,7 +341,7 @@ export default function App() {
           <ProjectWorkspace
             generation={activeGeneration}
             onNewProject={handleNewProject}
-            userInitials="NK"
+            userInitials={userInitials}
           />
         ) : (
           <LoadingScreen
@@ -487,6 +555,9 @@ export default function App() {
           onClose={() => setToast(null)}
         />
       )}
+
+      {/* Lovable-Inspired Authentication Modal */}
+      <AuthModal />
     </main>
   );
 }
