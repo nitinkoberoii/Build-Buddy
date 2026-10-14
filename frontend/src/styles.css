@@ -2451,12 +2451,24 @@ footer h3 {
 }
 
 .dropdown-item.logout-item {
-  color: #fca5a5;
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.dropdown-item.logout-item svg {
+  color: #ef4444;
+  stroke: #ef4444;
+  transition: transform 0.15s ease;
 }
 
 .dropdown-item.logout-item:hover {
   background: rgba(239, 68, 68, 0.12);
   color: #f87171;
+}
+
+.dropdown-item.logout-item:hover svg {
+  stroke: #f87171;
+  transform: translateX(2px);
 }
 
 /* ==========================================================================

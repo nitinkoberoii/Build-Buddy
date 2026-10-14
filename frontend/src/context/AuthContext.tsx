@@ -103,6 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useCallback(
     async (email: string, password: string) => {
       const data: TokenResponse = await loginUser(email, password);
+      localStorage.setItem("buildbuddy_remembered_email", email.trim());
       setUser(data.user);
       setOrganization(data.organization);
       setRole(data.role);
@@ -120,6 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       details?: AuthUserDetails
     ) => {
       const data: TokenResponse = await registerUser(email, password, orgName);
+      localStorage.setItem("buildbuddy_remembered_email", email.trim());
       setUser(data.user);
       setOrganization(data.organization);
       setRole(data.role);
@@ -136,6 +138,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const logout = useCallback(async () => {
+    if (user?.email && user.email !== "developer@buildbuddy.local") {
+      localStorage.setItem("buildbuddy_remembered_email", user.email);
+    }
     await logoutUser();
     setUser(null);
     setOrganization(null);
@@ -150,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       // Ignored
     }
-  }, []);
+  }, [user]);
 
   return (
     <AuthContext.Provider

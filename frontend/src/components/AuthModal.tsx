@@ -82,7 +82,9 @@ export const AuthModal: React.FC = () => {
   const [signupStep, setSignupStep] = useState<1 | 2>(1);
 
   // Form Fields
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(
+    () => localStorage.getItem("buildbuddy_remembered_email") || ""
+  );
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState("Software Engineer / Developer");
@@ -106,6 +108,11 @@ export const AuthModal: React.FC = () => {
     setErrorMessage(null);
     setInfoNotice(null);
     setForgotSuccess(null);
+    setPassword(""); // Never retain password
+    const remembered = localStorage.getItem("buildbuddy_remembered_email");
+    if (remembered) {
+      setEmail(remembered);
+    }
   }, [modalMode, isAuthModalOpen]);
 
   // Handle escape key to close modal
@@ -187,6 +194,7 @@ export const AuthModal: React.FC = () => {
 
     setIsSubmitting(true);
     try {
+      localStorage.setItem("buildbuddy_remembered_email", email.trim());
       await login(email.trim(), password);
     } catch (err: any) {
       setErrorMessage(err.message || "Invalid email or password.");
@@ -253,7 +261,7 @@ export const AuthModal: React.FC = () => {
     try {
       await forgotPassword(email.trim());
       setForgotSuccess(
-        "A password reset link has been dispatched! Please check your inbox or terminal output."
+        "A password reset link has been dispatched. Please check your inbox or terminal output."
       );
     } catch (err: any) {
       setErrorMessage(err.message || "Unable to send password reset link.");
@@ -296,14 +304,6 @@ export const AuthModal: React.FC = () => {
               <div className="auth-header-mark">
                 <BrandMark />
               </div>
-
-              {/* Inline Success banner */}
-              {forgotSuccess && (
-                <div className="auth-inline-banner success-banner">
-                  <span className="banner-icon">✅</span>
-                  <span>{forgotSuccess}</span>
-                </div>
-              )}
 
               {/* ---------- VIEW 1: LOG IN ---------- */}
               {currentMode === "login" && (
@@ -396,7 +396,6 @@ export const AuthModal: React.FC = () => {
                     {/* Inline Form Error */}
                     {errorMessage && (
                       <div className="auth-inline-banner error-banner">
-                        <span className="banner-icon">⚠️</span>
                         <span>{errorMessage}</span>
                       </div>
                     )}
@@ -508,7 +507,6 @@ export const AuthModal: React.FC = () => {
                     {/* Inline Form Error */}
                     {errorMessage && (
                       <div className="auth-inline-banner error-banner">
-                        <span className="banner-icon">⚠️</span>
                         <span>{errorMessage}</span>
                       </div>
                     )}
@@ -617,7 +615,6 @@ export const AuthModal: React.FC = () => {
                     {/* Inline Form Error */}
                     {errorMessage && (
                       <div className="auth-inline-banner error-banner">
-                        <span className="banner-icon">⚠️</span>
                         <span>{errorMessage}</span>
                       </div>
                     )}
@@ -653,6 +650,13 @@ export const AuthModal: React.FC = () => {
                     reset your password.
                   </p>
 
+                  {/* Inline Success banner - persistent, no emoji */}
+                  {forgotSuccess && (
+                    <div className="auth-inline-banner success-banner">
+                      <span>{forgotSuccess}</span>
+                    </div>
+                  )}
+
                   <form onSubmit={handleForgotSubmit} className="auth-fields-form">
                     <div className="auth-input-group">
                       <label htmlFor="forgot-email" className="auth-label">
@@ -673,7 +677,6 @@ export const AuthModal: React.FC = () => {
                     {/* Inline Form Error */}
                     {errorMessage && (
                       <div className="auth-inline-banner error-banner">
-                        <span className="banner-icon">⚠️</span>
                         <span>{errorMessage}</span>
                       </div>
                     )}
