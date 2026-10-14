@@ -39,12 +39,14 @@ class EmailService:
             return True
 
         try:
-            resend.Emails.send({
+            resend.api_key = RESEND_API_KEY
+            res = resend.Emails.send({
                 "from": RESEND_FROM_EMAIL,
                 "to": to_email,
                 "subject": subject,
                 "html": html_content,
             })
+            logger.info(f"Resend verification email dispatched to {to_email}: {res}")
             return True
         except Exception as e:
             logger.error(f"Failed to send verification email via Resend to {to_email}: {e}")
@@ -73,12 +75,14 @@ class EmailService:
             return True
 
         try:
-            resend.Emails.send({
+            resend.api_key = RESEND_API_KEY
+            res = resend.Emails.send({
                 "from": RESEND_FROM_EMAIL,
                 "to": to_email,
                 "subject": subject,
                 "html": html_content,
             })
+            logger.info(f"Resend email dispatched successfully to {to_email}: {res}")
             return True
         except Exception as e:
             logger.error(f"Failed to send password reset email via Resend to {to_email}: {e}")

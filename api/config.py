@@ -1,6 +1,9 @@
 import os
 import pathlib
 from typing import List
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 storage_env = os.getenv("STORAGE_DIR", "storage/generations")
@@ -48,3 +51,4 @@ CSRF_SECRET_KEY = os.getenv("CSRF_SECRET_KEY", "buildbuddy-dev-csrf-secret-key")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+
